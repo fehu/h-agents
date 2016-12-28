@@ -17,10 +17,11 @@ module Agent.Test.PingPong where
 
 import Agent
 import Agent.Extra
-import Agent.Manager
 
 import Data.IORef
 import Data.Typeable
+
+import Control.Monad (when)
 
 -----------------------------------------------------------------------------
 
@@ -47,7 +48,7 @@ pingDescriptor pingBehaviour counterpart maxCount = AgentDescriptor{
   , newAgentStates = do count <- newIORef 0
                         first <- newIORef True
                         return $ PingAgentState counterpart count first
-  , nextAgentId    = const . return $ AgentId "Ping"
+  , nextAgentId    = return $ AgentId "Ping"
   , noResult       = ()
   , debugAgent = True
   }
@@ -56,7 +57,7 @@ pingDescriptor pingBehaviour counterpart maxCount = AgentDescriptor{
 pongDescriptor pongBehaviour counterpart _ = AgentDescriptor{
     agentDefaultBehaviour = pongBehaviour
   , newAgentStates        = return $ PongAgentState counterpart
-  , nextAgentId           = const . return $ AgentId "Pong"
+  , nextAgentId           = return $ AgentId "Pong"
   , noResult              = ()
   , debugAgent            = True
 }
@@ -69,27 +70,32 @@ createPingPong' pingBehaviour pongBehaviour maxCount =
        let pingD = pingDescriptor pingBehaviour (readIORef pongRef) maxCount
            pongD = pongDescriptor pongBehaviour (readIORef pingRef) maxCount
 
-       m  <- newAgentsManager :: IO StatelessAgentsManager
+--       m  <- newAgentsManager :: IO StatelessAgentsManager
 
-       (ping :: GenericAgent, (piFRref, _)) <- createWithManager m pingD (const $ return ())
-       (pong :: GenericAgent, (poFRref, _)) <- createWithManager m pongD (const $ return ())
+       (ping :: ExecutableAgent, piFRref) <- createAgent pingD
+       (pong :: ExecutableAgent, poFRref) <- createAgent pongD
 
        pingRef `writeIORef` fromFullRef piFRref
        pongRef `writeIORef` fromFullRef poFRref
 
-       return (m, (piFRref, poFRref))
+       return (piFRref, poFRref)
 
 
 testPingPong' pingBehaviour pongBehaviour maxCount =
-    do (m, (ping, pong)) <- createPingPong' pingBehaviour pongBehaviour maxCount
+    do (ping, pong) <- createPingPong' pingBehaviour pongBehaviour maxCount
        ping `sendPriority` StartMessage
        pong `sendPriority` StartMessage
+
+       putStrLn "Stopping"
+       ping `send` StopMessage
+       pong `send` StopMessage
 
        putStrLn "Waiting for Ping"
        waitAgent ping
 
-       putStrLn "Stopping"
-       m `orderEachAgent` StopMessage
-
        return "Done"
 
+-----------------------------------------------------------------------------
+
+whenM :: (Monad m) => m Bool -> m () -> m ()
+whenM mb a = (`when` a) =<< mb

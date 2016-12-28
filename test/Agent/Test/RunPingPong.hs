@@ -17,7 +17,6 @@ module Main where
 import qualified Agent.Test.PingPongAgentsSend as PPASend
 import qualified Agent.Test.PingPongAgentsAsk  as PPAAsk
 import qualified Agent.Test.PingPongAgentsAsk2 as PPAAsk2
-import qualified Agent.Test.PingPongSystemSend as PPSSend
 
 import System.Environment
 
@@ -33,14 +32,14 @@ main = do args <- getArgs
           let maxCount = case args of [s] -> read s
                                       _   -> defaultMaxCount
 
-          putStrLn "Testing Ping-Pong (send)\n"
-          exec $ PPASend.testPingPong maxCount
+          -- putStrLn "Testing Ping-Pong (send)\n"
+          -- exec $ PPASend.testPingPong maxCount
 
           putStrLn "\n\nTesting Ping-Pong (ask)\n"
           exec $ PPAAsk.testPingPong maxCount
 
-          putStrLn "\n\nTesting Ping-Pong (ask 2)\n"
-          exec $ PPAAsk2.testPingPong maxCount
+          -- putStrLn "\n\nTesting Ping-Pong (ask 2)\n"
+          -- exec $ PPAAsk2.testPingPong maxCount
 
 
 exec f = do res <- try f

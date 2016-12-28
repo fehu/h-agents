@@ -50,15 +50,15 @@ executable run-ping-pong
         hspec -any
     default-language: Haskell2010
 
-executable run-ping-pong-sys
-    hs-source-dirs: test
-    main-is: Agent/Test/RunPingPongSys.hs
-    build-depends:
-        feh-agents -any,
-        base >=4.9 && <5.0,
-        hspec -any
-    default-language: Haskell2010
-    other-modules: Agent.Test.PingPongSystemSend
+-- executable run-ping-pong-sys
+--     hs-source-dirs: test
+--     main-is: Agent/Test/RunPingPongSys.hs
+--     build-depends:
+--         feh-agents -any,
+--         base >=4.9 && <5.0,
+--         hspec -any
+--     default-language: Haskell2010
+--     other-modules: Agent.Test.PingPongSystemSend
 
 
 test-suite test-agents
@@ -76,5 +76,4 @@ test-suite test-agents
         Agent.Test.PingPongAgentsAsk
         Agent.Test.PingPongAgentsAsk2
 
-        Agent.Test.PingPongSystemSend
-
+        -- Agent.Test.PingPongSystemSend

@@ -26,7 +26,8 @@ import Control.Monad
 pingBehaviour maxCount = AgentBehavior{
     handleMessages = AgentHandleMessages {
             handleMessage = \i state msg ->
-                case cast msg of Just Pong -> do c <- readIORef $ count state
+                case cast msg of Just Pong -> Just $
+                                              do c <- readIORef $ count state
                                                  counterpart <- pingCounterpart state
                                                  if c < maxCount
                                                     then do count state `writeIORef` (c+1)
@@ -34,8 +35,8 @@ pingBehaviour maxCount = AgentBehavior{
                                                             counterpart `send` Ping
                                                     else do putStrLn "Finished"
                                                             agentTerminate i
-                                 _         -> return ()
-          , respondMessage      = \_ _ -> return undefined
+                                 _         -> Nothing
+          , respondMessage = \_ _ _ -> Nothing
           }
   , agentAct = AgentActOnce (\i state -> whenM (readIORef $ firstTime state)
                             $ do firstTime state `writeIORef` False
@@ -50,10 +51,10 @@ pingBehaviour maxCount = AgentBehavior{
 pongBehaviour = AgentBehavior{
   handleMessages = AgentHandleMessages{
           handleMessage = \i state msg ->
-            case cast msg of Just Ping -> do putStrLn "Pong!"
-                                             pongCounterpart state >>= (`send` Pong)
-                             _         -> return ()
-        , respondMessage      = \_ _ -> return undefined
+            case cast msg of Just Ping -> Just $ do putStrLn "Pong!"
+                                                    pongCounterpart state >>= (`send` Pong)
+                             _         -> Nothing
+        , respondMessage = \_ _ _ -> Nothing
         }
   , agentAct = AgentNoAct
   }
@@ -63,9 +64,3 @@ pongBehaviour = AgentBehavior{
 createPingPong = createPingPong' pingBehaviour pongBehaviour
 
 testPingPong = testPingPong' pingBehaviour pongBehaviour
-
-
-
-
-
-

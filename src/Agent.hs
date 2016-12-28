@@ -291,14 +291,14 @@ instance (Typeable states) => AgentCreate  (AgentDescriptor states res)
 
             -- Start threads
             msgThreadId  <- forkFinally  (forever $ _runAgentMessages run')
-                                         (\_ -> do msgThreadStopped `putMVar` undefined
+                                         (\_ -> do msgThreadStopped `putMVar` ()
                                                    debugMsg run  "Message Thread Terminated"
                                                 )
 
             localDebug "createAgent" "actThreadId  <- forkFinally"
 
             actThreadId  <- forkFinally  (forever $ _runAgent run')
-                                         (\_ -> do actThreadStopped `putMVar` undefined
+                                         (\_ -> do actThreadStopped `putMVar` ()
                                                    debugMsg run "Act Thread Terminated"
                                          )
 

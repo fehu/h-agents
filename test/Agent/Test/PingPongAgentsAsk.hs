@@ -44,8 +44,8 @@ askPing maxCount i state = do c <- readIORef $ count state
 -- | TODO
 pingBehaviour maxCount = AgentBehavior{
     handleMessages = AgentHandleMessages {
-            handleMessage       = \_ _ -> undefined
-          , respondMessage      = \_ _ -> undefined
+            handleMessage       = \_ _ -> const Nothing
+          , respondMessage      = \_ _ -> const Nothing
           }
   , agentAct = AgentActRepeat (askPing maxCount) Nothing
   }
@@ -56,7 +56,7 @@ pingBehaviour maxCount = AgentBehavior{
 -- | Pong agent always responds 'Ping' messages with 'Pong'.
 pongBehaviour = AgentBehavior{
   handleMessages = AgentHandleMessages{
-          handleMessage  = \_ _ -> return undefined
+          handleMessage  = \_ _ _ -> Nothing
         , respondMessage = \_ _ -> selectResponse [ mbResp $ \Ping -> do  putStrLn "Ping!"
                                                                           return Pong ]
         }
@@ -68,4 +68,3 @@ pongBehaviour = AgentBehavior{
 createPingPong = createPingPong' pingBehaviour pongBehaviour
 
 testPingPong = testPingPong' pingBehaviour pongBehaviour
-
