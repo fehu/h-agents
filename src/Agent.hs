@@ -24,7 +24,9 @@ module Agent (
 
 , agentNoBehaviour
 
-, extractAgentStates
+-- , extractAgentStates
+
+, SimpleExecStatus (AgentIsExecuting, AgentIsStopped)
 
 , module A
 
@@ -54,18 +56,20 @@ instance Show Message' where show (Message msg) = show msg
 
 -- -----------------------------------------------
 
-data AgentRun states = AgentRun {
+data AgentImpl states execState = AgentImpl {
   _agentId :: AgentId,
+  _agentThreads :: TVar AgentThreads,
 
   _actCtrl  :: TVar (AgentActControl states),
   _msgCtrl  :: TVar (AgentHandleMessages states),
 
-  _actUpdateCtrl   :: TMVar (AgentActControl states),
+  _actUpdateCtrl    :: TMVar (AgentActControl states),
 
-  _runState        :: TVar RunState,
-  _runStateUpdate  :: TMVar RunState,
+  _runControlState   :: TVar AgentControlState,
+  _runControlUpdate  :: TMVar AgentControlState,
 
-  _states    :: states,
+  _execState  :: TVar execState,
+  _states     :: states,
 
   _messageBox          :: TQueue (Either Message' MessageWithResponse),
   _messageBoxPriority  :: TQueue (Either Message' MessageWithResponse),
@@ -73,14 +77,19 @@ data AgentRun states = AgentRun {
   _agentDebug  :: Bool
   }
 
-getRunState = readTVar . _runState
+getRunState = readTVar . _runControlState
 
 updRunState ag s = do  debugMsg ag $ "updating Run state: " ++ show s
-                       atomically  $ _runStateUpdate ag `putTMVar` s
+                       atomically  $ _runControlUpdate ag `putTMVar` s
 
+setExecState ag s = do  debugMsg ag $ "Exec State = " ++ show s
+                        atomically $ _execState ag `writeTVar` s
 
-extractAgentStates :: Typeable s => ExecutableAgent -> Maybe s
-extractAgentStates (ExecutableAgent ag) = cast $ _states ag
+withExecStateRun   ag f  = setExecState ag actionExecuting  >> f
+withExecStateStop  ag f  = setExecState ag actionStopped    >> f
+
+-- extractAgentStates :: Typeable s => ExecutableAgent -> Maybe s
+-- extractAgentStates (ExecutableAgent ag) = cast $ _states ag
 
 
 data MessageWithResponse =
@@ -88,7 +97,7 @@ data MessageWithResponse =
         MessageWithResponse msg (resp -> IO())
 
 
-data RunState = Paused | Running | Terminate deriving (Show, Eq)
+data AgentControlState = AgentRun | AgentPause | AgentTerminate deriving (Show, Eq)
 
 
 instance Show MessageWithResponse where
@@ -96,8 +105,11 @@ instance Show MessageWithResponse where
 
 -- -----------------------------------------------
 
-data ExecutableAgent = forall states . Typeable states => ExecutableAgent (AgentRun states)
-executableAgentId (ExecutableAgent run) = _agentId run
+data ExecutableAgent = forall states execState . (  Typeable states
+                                                 ,  AgentActionStatus execState
+                                                 ) =>
+    ExecutableAgent (AgentImpl states execState)
+executableAgentId (ExecutableAgent a) = _agentId a
 
 instance Eq  ExecutableAgent  where (==)     = (==) `on` executableAgentId
 instance Ord ExecutableAgent  where compare  = compare `on` executableAgentId
@@ -106,30 +118,36 @@ instance Ord ExecutableAgent  where compare  = compare `on` executableAgentId
 
 
 instance AgentComm ExecutableAgent where
-    agentId (ExecutableAgent run)  = _agentId run
-    send (ExecutableAgent run)     = _writeTQueue run _messageBox . Left . Message
+    agentId (ExecutableAgent a)  = _agentId a
+    send (ExecutableAgent a)     = _writeTQueue a _messageBox . Left . Message
     ask   = _ask MessageWithResponse
 
 
-_writeTQueue run getBox msg' = atomically $ writeTQueue (getBox run) msg'
+_writeTQueue a getBox msg' = atomically $ writeTQueue (getBox a) msg'
 
-_ask mkHook (ExecutableAgent run) msg = do
+_ask mkHook (ExecutableAgent a) msg = do
         respVar <- newEmptyMVar
-        _writeTQueue run _messageBox . Right $ mkHook msg (putMVar respVar)
+        _writeTQueue a _messageBox . Right $ mkHook msg (putMVar respVar)
         readMVar respVar
 
 
 -- -----------------------------------------------
 
 instance AgentCommPriority ExecutableAgent where
-    sendPriority (ExecutableAgent run) = _writeTQueue run _messageBoxPriority . Left . Message
+    sendPriority (ExecutableAgent a) = _writeTQueue a _messageBoxPriority . Left . Message
     askPriority   = _askPriority MessageWithResponse
 
-_askPriority mkHook (ExecutableAgent run) msg = do
+_askPriority mkHook (ExecutableAgent a) msg = do
         respVar <- newEmptyMVar
-        _writeTQueue run _messageBoxPriority . Right $ mkHook msg (putMVar respVar)
+        _writeTQueue a _messageBoxPriority . Right $ mkHook msg (putMVar respVar)
         readMVar respVar
 
+instance AgentStatus ExecutableAgent where
+  isActing        (ExecutableAgent a)  = agentIsActing a
+  isIdle          (ExecutableAgent a)  = agentIsIdle a
+  isTerminated    (ExecutableAgent a)  = agentIsTerminated a
+  waitIdle        (ExecutableAgent a)  = agentWaitIdle a
+  waitTerminate   (ExecutableAgent a)  = agentWaitTerminate a
 
 instance AgentControl ExecutableAgent where
     startAgent ag   = ag `sendPriority` StartMessage
@@ -145,11 +163,11 @@ whenM mb a = (`when` a) =<< mb
 
 
 _updateStates ag = do  mbAct  <- tryTakeTMVar $ _actUpdateCtrl ag
-                       mbRun  <- tryTakeTMVar $ _runStateUpdate ag
+                       mbRun  <- tryTakeTMVar $ _runControlUpdate ag
 
                        let mb = flip $maybe (return ())
                        mb mbAct (_actCtrl ag `writeTVar`)
-                       mb mbRun (_runState ag `writeTVar`)
+                       mb mbRun (_runControlState ag `writeTVar`)
 
 
 -- | Waits update of the state or `upd` variable.
@@ -157,9 +175,9 @@ _updateStates ag = do  mbAct  <- tryTakeTMVar $ _actUpdateCtrl ag
 --   `Left var update` or `Right run state update`.
 
 _waitUpdate ag upd var =        (lf =<< takeTMVar (upd ag))
-                       `orElse` (rf =<< takeTMVar (_runStateUpdate ag))
+                       `orElse` (rf =<< takeTMVar (_runControlUpdate ag))
     where  lf = fmap Left  . sideEffect (var ag `writeTVar`)
-           rf = fmap Right . sideEffect (_runState ag `writeTVar`)
+           rf = fmap Right . sideEffect (_runControlState ag `writeTVar`)
            sideEffect f x = f x >> return x
 
 -- | Handles messages as defiend in _msgCtrl.
@@ -173,10 +191,10 @@ _runAgentMessages (ExecutableAgent ag) = do
                             priority  <- tryReadTQueue $ _messageBoxPriority ag
                             runState  <- getRunState ag
                             msg  <- case (priority, runState) of
-                                        (Nothing, Running)  -> tryReadTQueue $ _messageBox ag
-                                        _                   -> return priority
-                            if runState == Terminate  then fail "Terminated"
-                                                      else maybe retry return msg
+                                        (Nothing, AgentRun)  -> tryReadTQueue $ _messageBox ag
+                                        _                    -> return priority
+                            if runState == AgentTerminate   then fail "Terminated"
+                                                            else maybe retry return msg
     h <- readTVarIO $ _msgCtrl  ag
     let states = _states ag
         dprint = debugMsg ag
@@ -197,20 +215,22 @@ _runAgentMessages (ExecutableAgent ag) = do
                           (error $ "No response function for " ++ show msg)
                           (respondMessage h ag states msg)
 
-_run  :: (Typeable states) => (RunState -> Bool)
-      -> (AgentRun states -> states -> IO ())
-      -> AgentRun states -> states
+_run  :: (Typeable states) => (AgentControlState -> Bool)
+      -> (AgentImpl states exState -> states -> IO ())
+      -> AgentImpl states exState  -> states
       -> IO ()
 _run atRunState action ag states =
     whenM (atRunState <$> atomically (getRunState ag))
           (action ag states)
 
 -- runs `_act` the corresponding thread thread
-_start :: (Typeable states) => AgentRun states -> states -> IO ()
-_start = _run (Paused ==) $ \ag states -> ag `updRunState` Running
+_start ::  (Typeable states, AgentActionStatus exState) =>
+           AgentImpl states exState -> states -> IO ()
+_start = _run (AgentPause ==) $ \ag states -> ag `updRunState` AgentRun
 
-_stop :: (Typeable states) => AgentRun states -> states -> IO ()
-_stop = _run (const True) $ \ag _ -> ag `updRunState` Terminate
+_stop ::  (Typeable states, AgentActionStatus exState) =>
+          AgentImpl states exState  -> states -> IO ()
+_stop = _run (const True) $ \ag _ -> ag `updRunState` AgentTerminate
 
 
 _runAgent ag'@(ExecutableAgent ag) = do
@@ -224,21 +244,40 @@ _runAgent ag'@(ExecutableAgent ag) = do
         execAct act = act ag (_states ag)
 
     case actAndState
-      of  (Terminate, _)                -> fail "Terminated"
-          (Paused, _)                   -> waitActUpd
-          (_, AgentNoAct)               -> waitActUpd
-          (_, AgentActOnce act after)   -> atomically (_actCtrl ag `writeTVar` after) >> execAct act
-          (_, AgentActRepeat act pause) -> execAct act >> maybe (return ()) threadDelay pause
+      of  (AgentTerminate, _)           -> ag `withExecStateStop` fail "Terminated"
+          (AgentPause, _)               -> ag `withExecStateStop` waitActUpd
+          (_, AgentNoAct)               -> ag `withExecStateStop` waitActUpd
+          (_, AgentActOnce act after)   -> do  ag `withExecStateRun`
+                                                  atomically (_actCtrl ag `writeTVar` after)
+                                               execAct act
+          (_, AgentActRepeat act pause) -> do  ag `withExecStateRun` execAct act
+                                               maybe (return ()) threadDelay pause
 
 
-instance (Typeable states) => AgentExecControl (AgentRun states) states where
-    agentRef arun        = AgentRef (ExecutableAgent arun)
-    agentTerminate arun  = arun `updRunState` Terminate
+instance (Typeable states, AgentActionStatus exState) =>
+  AgentExecControl (AgentImpl states exState) states where
+    type ExecutionStatus (AgentImpl states exState) = exState
 
-    actOnce arun act = atomically $ do  old <- readTVar $ _actCtrl arun
-                                        _actUpdateCtrl arun `putTMVar` AgentActOnce act old
-    actRepeat arun act = atomically . putTMVar (_actUpdateCtrl arun) . AgentActRepeat act
-    actPause arun = arun `updRunState` Paused
+    agentRef a        = AgentRef (ExecutableAgent a)
+    agentFullRef a    = AgentFullRef (ExecutableAgent a)
+                      <$> readTVarIO  (_agentThreads a)
+    agentTerminate = (`updRunState` AgentTerminate)
+
+    agentExecutionStatus = readTVarIO . _execState
+    agentIsTerminated = atomically . fmap (== AgentTerminate) . getRunState
+
+    agentWaitIdle a = atomically $ do  exState <- readTVar $ _execState a
+                                       unless  (actionIsStopped exState)
+                                               retry
+
+    agentWaitTerminate a = atomically $ do  runState <- getRunState a
+                                            unless  (runState == AgentTerminate)
+                                                    retry
+
+    actOnce a act = atomically $ do  old <- readTVar $ _actCtrl a
+                                     _actUpdateCtrl a `putTMVar` AgentActOnce act old
+    actRepeat a act = atomically . putTMVar (_actUpdateCtrl a) . AgentActRepeat act
+    actStop = (`updRunState` AgentPause)
 
     setMessageHandlers arun = atomically . writeTVar (_msgCtrl arun)
     setAgentBehavior arun b = atomically $ do _msgCtrl arun `writeTVar` handleMessages b
@@ -251,38 +290,47 @@ instance (Typeable states) => AgentExecControl (AgentRun states) states where
 agentNoBehaviour = AgentBehavior AgentNoAct $ AgentHandleMessages (\i s -> selectMessageHandler [])
                                                                   (\i s -> selectResponse [])
 
-instance (Typeable states) => AgentCreate  (AgentDescriptor states res)
-                                           ExecutableAgent
+instance  (  Typeable states
+          ,  AgentActionStatus exState
+          ) => AgentCreate  (AgentDescriptor states exState)
+                            ExecutableAgent
   where
     createAgent AgentDescriptor  {  agentDefaultBehaviour=behaviour
                                  ,  newAgentStates=newStates
+                                 ,  initialExecState=iExState
                                  ,  nextAgentId=nextId
                                  ,  debugAgent=debug } =
         do  id        <- nextId
             states    <- newStates
 
-            run <- atomically $
+            let iExState' = if iExState == actionStopped
+                              then iExState else actionStopped
+            a <- atomically $
                 do  actCtrl     <- newTVar $ agentAct behaviour
                     actUpdCtrl  <- newEmptyTMVar
+                    exState     <- newTVar iExState'
+                    threads     <- newTVar undefined
                     msgCtrl     <- newTVar $ handleMessages behaviour
-                    runState    <- newTVar Paused
+                    runState    <- newTVar AgentPause
                     runStateUpd <- newEmptyTMVar
                     messageBoxPriority  <- newTQueue
                     messageBox          <- newTQueue
 
-                    return AgentRun {
-                                 _agentId       = id,
-                                 _agentDebug    = debug,
-                                 _states        = states,
-                                 _actCtrl       = actCtrl,
-                                 _actUpdateCtrl = actUpdCtrl,
-                                 _msgCtrl       = msgCtrl,
-                                 _runState      = runState,
-                                 _runStateUpdate        = runStateUpd,
-                                 _messageBox            = messageBox,
-                                 _messageBoxPriority    = messageBoxPriority
+                    return AgentImpl {
+                                 _agentId        = id,
+                                 _agentThreads   = threads,
+                                 _agentDebug     = debug,
+                                 _states         = states,
+                                 _execState      = exState,
+                                 _actCtrl        = actCtrl,
+                                 _actUpdateCtrl  = actUpdCtrl,
+                                 _msgCtrl        = msgCtrl,
+                                 _runControlState     = runState,
+                                 _runControlUpdate    = runStateUpd,
+                                 _messageBox          = messageBox,
+                                 _messageBoxPriority  = messageBoxPriority
                                }
-            let run'  = ExecutableAgent run
+            let a'  = ExecutableAgent a
 
             msgThreadStopped <- newEmptyMVar
             actThreadStopped <- newEmptyMVar
@@ -290,26 +338,28 @@ instance (Typeable states) => AgentCreate  (AgentDescriptor states res)
             localDebug "createAgent" "msgThreadId  <- forkFinally"
 
             -- Start threads
-            msgThreadId  <- forkFinally  (forever $ _runAgentMessages run')
-                                         (\_ -> do msgThreadStopped `putMVar` ()
-                                                   debugMsg run  "Message Thread Terminated"
-                                                )
+            msgThread  <- forkFinally  (forever $ _runAgentMessages a')
+                                       (\_ -> do msgThreadStopped `putMVar` ()
+                                                 debugMsg a  "Message Thread Terminated"
+                                              )
 
             localDebug "createAgent" "actThreadId  <- forkFinally"
 
-            actThreadId  <- forkFinally  (forever $ _runAgent run')
-                                         (\_ -> do actThreadStopped `putMVar` ()
-                                                   debugMsg run "Act Thread Terminated"
-                                         )
+            actThread  <- forkFinally  (forever $ _runAgent a')
+                                       (\_ -> do actThreadStopped `putMVar` ()
+                                                 debugMsg a "Act Thread Terminated"
+                                       )
+            let threads = AgentThreads actThread msgThread
+            atomically $ writeTVar (_agentThreads a) threads
+            return (a', AgentFullRef a' threads)
 
-            let msgThread = AgentThread {  _threadId       = msgThreadId
-                                        ,  _threadFinished = not <$> isEmptyMVar msgThreadStopped
-                                        ,  _waitThread     = readMVar msgThreadStopped
-                                        }
-                actThread = AgentThread {  _threadId       = actThreadId
-                                        ,  _threadFinished = not <$> isEmptyMVar actThreadStopped
-                                        ,  _waitThread     = readMVar actThreadStopped
-                                        }
-                threads = AgentThreads actThread msgThread
 
-            return (run', AgentFullRef run' threads)
+-- -----------------------------------------------
+-- -----------------------------------------------
+
+data SimpleExecStatus = AgentIsExecuting | AgentIsStopped
+  deriving (Show, Eq)
+
+instance AgentActionStatus SimpleExecStatus where
+  actionExecuting  = AgentIsExecuting
+  actionStopped    = AgentIsStopped

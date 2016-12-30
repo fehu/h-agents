@@ -16,12 +16,15 @@
 module Agent.Test.PingPong where
 
 import Agent
-import Agent.Extra
 
 import Data.IORef
 import Data.Typeable
 
 import Control.Monad (when)
+
+-----------------------------------------------------------------------------
+
+_debug = True
 
 -----------------------------------------------------------------------------
 
@@ -49,8 +52,8 @@ pingDescriptor pingBehaviour counterpart maxCount = AgentDescriptor{
                         first <- newIORef True
                         return $ PingAgentState counterpart count first
   , nextAgentId    = return $ AgentId "Ping"
-  , noResult       = ()
-  , debugAgent = True
+  , initialExecState = AgentIsStopped
+  , debugAgent = _debug
   }
 
 
@@ -58,8 +61,8 @@ pongDescriptor pongBehaviour counterpart _ = AgentDescriptor{
     agentDefaultBehaviour = pongBehaviour
   , newAgentStates        = return $ PongAgentState counterpart
   , nextAgentId           = return $ AgentId "Pong"
-  , noResult              = ()
-  , debugAgent            = True
+  , initialExecState = AgentIsStopped
+  , debugAgent            = _debug
 }
 -----------------------------------------------------------------------------
 
@@ -75,8 +78,8 @@ createPingPong' pingBehaviour pongBehaviour maxCount =
        (ping :: ExecutableAgent, piFRref) <- createAgent pingD
        (pong :: ExecutableAgent, poFRref) <- createAgent pongD
 
-       pingRef `writeIORef` fromFullRef piFRref
-       pongRef `writeIORef` fromFullRef poFRref
+       pingRef `writeIORef` fullRef2Ref piFRref
+       pongRef `writeIORef` fullRef2Ref poFRref
 
        return (piFRref, poFRref)
 
@@ -86,12 +89,12 @@ testPingPong' pingBehaviour pongBehaviour maxCount =
        ping `sendPriority` StartMessage
        pong `sendPriority` StartMessage
 
-       putStrLn "Stopping"
-       ping `send` StopMessage
-       pong `send` StopMessage
-
        putStrLn "Waiting for Ping"
-       waitAgent ping
+       waitTerminate ping
+
+       putStrLn "Stopping"
+      --  ping `send` StopMessage
+       pong `send` StopMessage
 
        return "Done"
 

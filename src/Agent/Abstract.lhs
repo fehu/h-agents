@@ -31,18 +31,19 @@ module Agent.Abstract(
 , AgentHandleMessages(..)
 
 , AgentComm(..), ExpectedResponse
+, AgentStatus(..)
 , AgentRef(..)
 
 , Message
 , StartMessage(StartMessage), StopMessage(StopMessage)
 
-, AgentExecControl(..), AgentInnerInterface
+, AgentExecControl(..), AgentInnerInterface, AgentActionStatus (..)
 , AgentActControl(..), Millis
 
 , AgentId(..)
 , AgentCommPriority(..), AgentControl(..)
 , AgentFullRef(..), fullRef2Ref
-, AgentThread(..), AgentThreads(..)
+, AgentThreads(..)
 
 , selectMessageHandler,  mbHandle, selectMessageHandler',  mbHandle'
 , selectResponse, mbResp, selectResponse', mbResp'
@@ -57,7 +58,7 @@ import Data.Function (on)
 
 import Control.Applicative ((<|>))
 import Control.Monad
-import Control.Concurrent (ThreadId)
+import Control.Concurrent (ThreadId, killThread)
 import Control.Concurrent.STM
 
 import GHC.Exts (Constraint)
@@ -79,13 +80,38 @@ type AgentAct states = forall i . (AgentExecControl i states) => i -> states -> 
 
 type Millis = Int
 
-class AgentExecControl i states | i -> states where
+class (Show s, Eq s) =>
+  AgentActionStatus s where
+    actionExecuting   :: s
+    actionStopped     :: s
+
+    actionIsExecuting  :: s -> Bool
+    actionIsStopped    :: s -> Bool
+
+    actionIsExecuting  = (== actionExecuting)
+    actionIsStopped    = (== actionStopped)
+
+class (AgentActionStatus (ExecutionStatus i)) =>
+  AgentExecControl i states | i -> states where
+    type ExecutionStatus i :: *
+
     agentRef        :: i -> AgentRef
+    agentFullRef    :: i -> IO AgentFullRef
     agentTerminate  :: i -> IO ()
+
+    agentExecutionStatus  :: i -> IO (ExecutionStatus i)
+
+    agentIsActing         :: i -> IO Bool
+    agentIsIdle           :: i -> IO Bool
+    agentIsTerminated     :: i -> IO Bool
+
+    agentWaitIdle         :: i -> IO ()
+    agentWaitTerminate    :: i -> IO ()
+
 
     actOnce    :: i -> AgentAct states -> IO ()
     actRepeat  :: i -> AgentAct states -> Maybe Millis -> IO ()
-    actPause   :: i -> IO ()
+    actStop    :: i -> IO ()
 
     setMessageHandlers  :: i -> AgentHandleMessages states -> IO ()
     setAgentBehavior    :: i -> AgentBehavior states -> IO ()
@@ -97,6 +123,14 @@ class AgentExecControl i states | i -> states where
     whenDebug i  = when (agentDebug i)
     debugMsg i   = whenDebug i . putStrLn . (debugPref ++) . show
                  where debugPref = "[DEBUG][" ++ show (agentId $ agentRef i) ++ "]"
+
+    agentTerminate i = do  AgentFullRef _ (AgentThreads act msg) <- agentFullRef i
+                           killThread act
+                           killThread msg
+
+    agentIsActing  = fmap actionIsExecuting  . agentExecutionStatus
+    agentIsIdle    = fmap actionIsStopped    . agentExecutionStatus
+
 
 -- Alias for AgentExecControl
 type AgentInnerInterface = AgentExecControl
@@ -147,6 +181,18 @@ class (Typeable ref, Ord ref) => AgentComm ref where
   send     :: (Message msg)                                 => ref -> msg  -> IO ()
   ask      :: (Message msg, Message (ExpectedResponse msg)) => ref -> msg  -> IO (ExpectedResponse msg)
 
+\end{code}
+
+Agent execution status:
+
+\begin{code}
+class AgentStatus ref where
+  isActing        :: ref -> IO Bool
+  isIdle          :: ref -> IO Bool
+  isTerminated    :: ref -> IO Bool
+
+  waitIdle        :: ref -> IO ()
+  waitTerminate   :: ref -> IO ()
 \end{code}
 
 These messages are handled by the corresponding agent's functions.
@@ -263,17 +309,19 @@ instance Show AgentId  where show (AgentId s) = s
 
 \end{code}
 
-Normal agent reference is a container for types of class \verb|AgentComm|.
+Normal agent reference is a container for types of classes \verb|AgentComm|
+and \verb|AgentStatus|.
 
 \begin{code}
 
-data AgentRef = forall ref . (AgentComm ref) => AgentRef ref
+data AgentRef = forall ref . (AgentComm ref, AgentStatus ref) => AgentRef ref
 
 instance Show AgentRef where show (AgentRef ref) = show $ agentId ref
 
 \end{code}
 
-A reference itself provides \verb|AgentComm| interface for the underlying agent.
+A reference itself provides \verb|AgentComm| and \verb|AgentStatus|
+interfaces for the underlying agent.
 
 \begin{code}
 
@@ -281,6 +329,13 @@ instance AgentComm AgentRef where
   agentId  (AgentRef ref)  = agentId ref
   send     (AgentRef ref)  = send ref
   ask      (AgentRef ref)  = ask ref
+
+instance AgentStatus AgentRef where
+  isActing       (AgentRef ref) = isActing ref
+  isIdle         (AgentRef ref) = isIdle ref
+  isTerminated   (AgentRef ref) = isTerminated ref
+  waitIdle       (AgentRef ref) = waitIdle ref
+  waitTerminate  (AgentRef ref) = waitTerminate ref
 
 \end{code}
 
@@ -310,11 +365,10 @@ A \emph{control interface} should be based on the priority messages.
 
 \begin{code}
 
-class (AgentCommPriority ag) => AgentControl ag where
+class (AgentCommPriority ag, AgentStatus ag) => AgentControl ag where
   startAgent   :: ag -> IO ()
   stopAgent    :: ag -> IO ()
   stopAgentNow :: ag -> IO ()
-
 
 \end{code}
 
@@ -341,21 +395,9 @@ Each agent is expected to be composed of two execution threads:
 
 \begin{code}
 
-data AgentThreads = AgentThreads  {  _actThread      :: AgentThread
-                                  ,  _messageThread  :: AgentThread
+data AgentThreads = AgentThreads  {  _actThread      :: ThreadId
+                                  ,  _messageThread  :: ThreadId
                                   }
-
-\end{code}
-
-The information about agent's thread permits checking on its status,
-waiting for it to finish or killing it, using the provided \verb|ThreadId|.
-
-\begin{code}
-
-data AgentThread = AgentThread {  _threadId        :: ThreadId
-                               ,  _threadFinished  :: IO Bool
-                               ,  _waitThread      :: IO ()
-                               }
 
 \end{code}
 
@@ -371,8 +413,8 @@ instance Ord AgentFullRef where
 
 \end{code}
 
-It also provides instances of \verb|AgentComm|, \verb|AgentCommPriority| and
-\verb|AgentControl|.
+It also provides instances of \verb|AgentComm|, \verb|AgentCommPriority|,
+\verb|AgentControl| and \verb|AgentStatus|.
 
 \begin{code}
 
@@ -389,6 +431,13 @@ instance AgentControl AgentFullRef where
   startAgent   (AgentFullRef ref _) = startAgent ref
   stopAgent    (AgentFullRef ref _) = stopAgent ref
   stopAgentNow (AgentFullRef ref _) = stopAgentNow ref
+
+instance AgentStatus AgentFullRef where
+  isActing       (AgentFullRef ref _)  = isActing ref
+  isIdle         (AgentFullRef ref _)  = isIdle ref
+  isTerminated   (AgentFullRef ref _)  = isTerminated ref
+  waitIdle       (AgentFullRef ref _)  = waitIdle ref
+  waitTerminate  (AgentFullRef ref _)  = waitTerminate ref
 
 \end{code}
 
@@ -411,26 +460,26 @@ A simple \emph{agent descriptor} that can be used for agent creation.
 
 \begin{code}
 
-data AgentDescriptor states result = AgentDescriptor{
+data AgentDescriptor states exState = AgentDescriptor{
   agentDefaultBehaviour  :: AgentBehavior states,
   newAgentStates         :: IO states,
+  initialExecState       :: exState,
   nextAgentId            :: IO AgentId,
-  noResult               :: result,
   debugAgent             :: Bool
   }
 
-newAgentDescriptor :: String -> AgentBehavior states -> IO states -> result -> Bool
-                   -> IO (AgentDescriptor states result)
+newAgentDescriptor :: String -> AgentBehavior states -> IO states -> exState -> Bool
+                   -> IO (AgentDescriptor states exState)
 
-newAgentDescriptor name beh newS noRes debug = do
+newAgentDescriptor name beh newS initialExState debug = do
     c <- atomically $ newTVar (0 :: Int)
     let nextId = do  i <- atomically $ do  i <- readTVar c
                                            modifyTVar c (1+)
                                            return i
                      return . AgentId $ name ++ show i
-    return $ AgentDescriptor beh newS nextId noRes debug
+    return $ AgentDescriptor beh newS initialExState nextId debug
 
-instance Show (AgentDescriptor states res) where
+instance Show (AgentDescriptor states exState) where
     show _ = "*AgentDescriptor*"
 
 instance Show (AgentActControl states) where

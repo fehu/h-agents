@@ -19,14 +19,13 @@ cabal-version:       >=1.10
 library
   exposed-modules:    Agent
                       Agent.Abstract
-                      Agent.Extra
                       Agent.Ask
 
-                      Agent.AgentSystem.Controller
-                      Agent.AgentSystem.Controller.AgentStatus
-                      Agent.AgentSystem.Controller.Interface
-                      Agent.AgentSystem.Controller.Leaf
-                      Agent.AgentSystem.Controller.Node
+                      -- Agent.AgentSystem.Controller
+                      -- Agent.AgentSystem.Controller.AgentStatus
+                      -- Agent.AgentSystem.Controller.Interface
+                      -- Agent.AgentSystem.Controller.Leaf
+                      -- Agent.AgentSystem.Controller.Node
 
   -- other-modules:
   build-depends:       base >=4.9 && <4.10,
