@@ -32,7 +32,7 @@ import Data.Maybe (fromMaybe, fromJust)
 
 import Control.Applicative ((<|>))
 import Control.Monad (forever, when)
-import Control.Exception (Exception, SomeException, throwIO)
+import Control.Exception (Exception, SomeException(..), throwIO)
 
 import Control.Concurrent (ThreadId, forkIO, forkFinally, killThread)
 import Control.Concurrent.STM
@@ -86,11 +86,11 @@ class AgentControl a
         agentName     :: a -> String
         agentDebug    :: a -> IO Bool
         agentSetDebug :: a -> Bool -> IO ()
-        printDebug    :: (Show x) => a -> x -> IO ()
+        printDebug    :: a -> String -> IO ()
 
-        printDebug a x = do debug <- agentDebug a
-                            when debug . putStrLn $
-                              "[DEBUG][" ++ show (agentName a) ++ "] " ++ show x
+        printDebug a str = do debug <- agentDebug a
+                              when debug . putStrLn $
+                                "[DEBUG][" ++ show (agentName a) ++ "] " ++ str
 
 --------------------------------------------------------------------------------
 
@@ -170,8 +170,11 @@ newAgentThread :: IO () -> IO AgentThread
 newAgentThread f = do  threadTerminated  <- newEmptyTMVarIO
                        threadId <- forkFinally f $ atomically
                                                  . putTMVar threadTerminated
-                                                 . either Just (const Nothing)
+                                                 . either terminationEx (const Nothing)
                        return $ AgentThread threadId threadTerminated
+  where terminationEx e@(SomeException ex) =
+          case cast ex of Just NormalTermination -> Nothing
+                          _                      -> Just e
 
 awaitAgentThread :: AgentThread -> IO (Maybe SomeException)
 awaitAgentThread (AgentThread _ terminated) = atomically $ takeTMVar terminated
@@ -208,12 +211,12 @@ instance AgentControl (GenericAgent s) where
   agentStart      = setExecState AgentRun
   agentPause      = setExecState AgentPause
   agentTerminate  = setExecState AgentTerminate
-  agentWaitTermination a = do waitAndReportTerminationReason _messageThread
-                              waitAndReportTerminationReason _actionThread
-    where waitAndReportTerminationReason getThreadVar = do
+  agentWaitTermination a = do waitAndReportTerminationReason "Message" _messageThread
+                              waitAndReportTerminationReason "Action"  _actionThread
+    where waitAndReportTerminationReason label getThreadVar = do
             thread <- readTVarIO $ getThreadVar a
             reason <- awaitAgentThread thread
-            printDebug a $ "Terminated " ++
+            printDebug a $ label ++ " thread terminated " ++
                             maybe "normally."
                                   (\err -> "with error: " ++ show err ++ ".")
                                   reason
