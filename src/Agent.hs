@@ -20,7 +20,8 @@ module Agent(
 , CreateAgent(..), CreateAgentRef(..)
 
 , GenericAgent
-, GenericAgentDescriptor(..), MessageHandling(..)
+, GenericAgentDescriptor(..)
+, MessageHandling(..), handlesNoMessages
 
 , mbHandle, selectMessageHandler
 , mbResp, selectResponse
@@ -196,6 +197,8 @@ data MessageHandling s = MessageHandling{
                     c -> msg -> Maybe (IO resp)
   }
 
+handlesNoMessages = MessageHandling (selectMessageHandler [])
+                                    (selectResponse [])
 
 instance ReactiveAgent (GenericAgent s) where
   send a = putMessageInBox (_messageBox a)
@@ -211,8 +214,9 @@ instance AgentControl (GenericAgent s) where
   agentStart      = setExecState AgentRun
   agentPause      = setExecState AgentPause
   agentTerminate  = setExecState AgentTerminate
-  agentWaitTermination a = do waitAndReportTerminationReason "Message" _messageThread
+  agentWaitTermination a = do a `printDebug` "agentWaitTermination"
                               waitAndReportTerminationReason "Action"  _actionThread
+                              waitAndReportTerminationReason "Message" _messageThread
     where waitAndReportTerminationReason label getThreadVar = do
             thread <- readTVarIO $ getThreadVar a
             reason <- awaitAgentThread thread
@@ -235,21 +239,26 @@ data GenericAgentDescriptor s = GenericAgentDescriptor{
   , initialState    :: IO s
   }
 
-withExecState a f = do execState <- atomically $ do s <- readTVar $ _execState a
-                                                    if s == AgentPause
-                                                      then retry
-                                                      else return s
-                       case execState
-                        of AgentRun       -> f
-                           AgentTerminate -> throwIO NormalTermination
-
+processMessages :: GenericAgent s -> MessageHandling s -> IO ()
 processMessages a mh = do
-  msg <- atomically $   readTQueue (_messagePriorityBox a)
-                    <|> readTQueue (_messageBox a)
-  case msg of MessageNoResponse m ->
-                  fromMaybe (return ()) (msgHandle mh a m)
-              MessageAwaitsResponse m respond ->
-                  respond =<< sequence (msgRespond mh a m)
+      mp <- atomically $    notRunState
+                        <|> readMessage _messagePriorityBox
+                        <|> readMessage _messageBox
+      case mp of Left AgentPause      -> atomically waitNotPause -- TODO
+                 Left AgentTerminate  -> throwIO NormalTermination
+                 Right msg            -> handleMessage msg
+  where notRunState = do state <- readTVar $ _execState a
+                         if state == AgentRun then retry
+                                              else return $ Left state
+        readMessage box = Right <$> readTQueue (box a)
+        waitNotPause = do state <- readTVar $ _execState a
+                          when (state == AgentPause) retry
+        handleMessage msg = case msg
+                              of MessageNoResponse m ->
+                                     fromMaybe (return ()) (msgHandle mh a m)
+                                 MessageAwaitsResponse m respond ->
+                                     respond =<< sequence (msgRespond mh a m)
+
 
 instance CreateAgent (GenericAgentDescriptor s) (GenericAgent s) where
   createAgent d = do  debug     <- newTVarIO $ agDebug d
@@ -265,16 +274,22 @@ instance CreateAgent (GenericAgentDescriptor s) (GenericAgent s) where
                                            msgBox msgPBox
                                            msgThreadVar actThreadVar
 
-                      msgThread <- newAgentThread
-                                .  foreverWithExecState a
+                      msgThread <- newAgentThread . forever
                                 $  processMessages a (messageHandling d)
-                      actThread <- newAgentThread
-                                .  foreverWithExecState a
-                                $  action d a
+                      actThread <- newAgentThread . forever
+                                . withExecState a $ action d a
                       atomically $  msgThreadVar `writeTVar` msgThread
                                  >> actThreadVar `writeTVar` actThread
                       return a
-    where foreverWithExecState a = forever . withExecState a
+    where withExecState a f = do
+               execState <- atomically $ do s <- readTVar $ _execState a
+                                            if s == AgentPause
+                                              then retry
+                                              else return s
+               case execState
+                of AgentRun       -> f
+                   AgentTerminate -> throwIO NormalTermination
+
 
 instance CreateAgentRef (GenericAgentDescriptor s) where
   type CreateAgentType (GenericAgentDescriptor s) = (GenericAgent s)

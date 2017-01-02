@@ -37,3 +37,5 @@ executable run-ping-pong
                      , feh-agents
   default-language:    Haskell2010
   other-modules:       Agent.PingPong
+                       Agent.PingPongSend
+                       Agent.PingPongAsk
