@@ -12,8 +12,6 @@ import Control.Monad (when)
 import Control.Concurrent (yield)
 
 --------------------------------------------------------------------------------
-_debug = True
---------------------------------------------------------------------------------
 
 -- | First sends 'Ping' message to _pong_ agent.
 -- Then sends 'Ping' to _pong_ only in response to 'Pong' message.

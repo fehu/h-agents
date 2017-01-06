@@ -11,8 +11,6 @@ import Data.IORef
 
 import Control.Concurrent (yield)
 
------------------------------------------------------------------------------
-_debug = True
 --------------------------------------------------------------------------------
 
 data Finished = Finished deriving (Typeable, Show)

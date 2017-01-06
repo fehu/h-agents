@@ -4,6 +4,8 @@ import Data.Typeable
 
 import System.Environment
 
+--------------------------------------------------------------------------------
+_debug = True
 -----------------------------------------------------------------------------
 
 data Ping = Ping deriving (Typeable, Show)

@@ -14,9 +14,6 @@ import Control.Concurrent (yield)
 
 type instance ExpectedResponse Ping = Pong
 
---------------------------------------------------------------------------------
-_debug = True
---------------------------------------------------------------------------------
 
 -- | Ask 'Ping' _nPings_ times. Handles no messages.
 pingDescriptor nPings pongRef =
