@@ -9,7 +9,7 @@ homepage:            -
 license:             MIT
 license-file:        LICENSE
 author:              Dmitry K.
-maintainer:          -
+maintainer:          kdn.kovalev@gmail.com
 -- copyright:
 category:            Concurrency
 build-type:          Simple
@@ -18,15 +18,16 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Agent
+
   build-depends:       base >=4.9 && <4.10,
-                       stm ==2.4.4.*,
-                       containers >=0.5
+                       stm ==2.4.4.*
+
   hs-source-dirs:      src
   default-language:    Haskell2010
-  -- other-extensions:    ExistentialQuantification MultiParamTypeClasses
-  --                      FunctionalDependencies Rank2Types TypeFamilies
-  --                      FlexibleContexts FlexibleInstances
-  --                      TupleSections ScopedTypeVariables
+  other-extensions:    ConstraintKinds TypeFamilies Rank2Types
+                       FlexibleInstances FlexibleContexts
+                       ExistentialQuantification MultiParamTypeClasses
+                       FunctionalDependencies ScopedTypeVariables
 
 
 executable run-ping-pong
@@ -39,3 +40,4 @@ executable run-ping-pong
   other-modules:       Agent.PingPong
                        Agent.PingPongSend
                        Agent.PingPongAsk
+                       Agent.PingPongSendResult

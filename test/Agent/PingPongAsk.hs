@@ -36,7 +36,7 @@ pingDescriptor nPings pongRef =
                                          i' `writeIORef` (i-1)
                                  else do putStrLn "Terminating Ping"
                                          agentTerminate c
-
+    , emptyResult = EmptyResult :: EmptyResult ()
     }
 
 -- | Responds 'Pong' to 'Ping' message.
@@ -45,6 +45,7 @@ pongDescriptor =
       agName = "Pong"
     , agDebug = _debug
     , initialState = return ()
+    , emptyResult  = EmptyResult :: EmptyResult ()
     , messageHandling = MessageHandling{
           msgHandle  = selectMessageHandler []
         , msgRespond = selectResponse [

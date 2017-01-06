@@ -1,9 +1,19 @@
+-----------------------------------------------------------------------------
+--
+-- Module      :  Agent
+-- License     :  MIT
+--
+-- Maintainer  :  kdn.kovalev@gmail.com
+-- Stability   :  experimental
+-- Portability :  non-portable (requires STM)
+--
+-----------------------------------------------------------------------------
+
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -15,7 +25,11 @@ module Agent(
 , handleResponseAsync, handleResponseSuccessAsync
 , waitResponse, waitResponseSuccess
 
-, AgentRef, AgentControl(..), AgentInnerInterface(..)
+, AgentControl(..), AgentInnerInterface(..)
+, AgentResult(..), AgentExecutionResult
+, EmptyResult(..)
+
+, AgentRef
 
 , CreateAgent(..), CreateAgentRef(..)
 
@@ -29,10 +43,10 @@ module Agent(
 ) where
 
 import Data.Typeable (Typeable, cast)
-import Data.Maybe (fromMaybe, fromJust)
+import Data.Maybe (fromMaybe, fromJust, isNothing)
 
 import Control.Applicative ((<|>))
-import Control.Monad (forever, when)
+import Control.Monad (forever, when, unless)
 import Control.Exception (Exception, SomeException(..), throwIO)
 
 import Control.Concurrent (ThreadId, forkIO, forkFinally, killThread)
@@ -84,6 +98,10 @@ class AgentControl a
         agentTerminate        :: a -> IO ()
         agentWaitTermination  :: a -> IO ()
 
+        agentRunning    :: a -> IO Bool
+        agentPaused     :: a -> IO Bool
+        agentTerminated :: a -> IO Bool
+
         agentName     :: a -> String
         agentDebug    :: a -> IO Bool
         agentSetDebug :: a -> Bool -> IO ()
@@ -93,18 +111,32 @@ class AgentControl a
                               when debug . putStrLn $
                                 "[DEBUG][" ++ show (agentName a) ++ "] " ++ str
 
+-----------------------------------------------------------------------------
+
+type AgentExecutionResult res = Either SomeException res
+
+class AgentResult a res | a -> res
+  where
+    agentResult     :: a -> IO (Maybe (AgentExecutionResult res))
+    agentWaitResult :: a -> IO        (AgentExecutionResult res)
+
+data AgentExecutionAborted = AgentExecutionAborted deriving (Typeable, Show)
+instance Exception AgentExecutionAborted
+
 --------------------------------------------------------------------------------
 
 -- | Reference for 'ReactiveAgent'.
-data AgentRef = forall a . (ReactiveAgent a, AgentControl a) => AgentRef a
+data AgentRef res = forall a . ( ReactiveAgent a
+                               , AgentControl a
+                               , AgentResult a res ) => AgentRef a
 
-instance ReactiveAgent AgentRef where
+instance ReactiveAgent (AgentRef res) where
   send (AgentRef a) = send a
   ask  (AgentRef a) = ask a
   sendPriority (AgentRef a) = sendPriority a
   askPriority  (AgentRef a) = askPriority a
 
-instance AgentControl AgentRef where
+instance AgentControl (AgentRef res) where
   agentName            (AgentRef a) = agentName a
   agentDebug           (AgentRef a) = agentDebug a
   agentSetDebug        (AgentRef a) = agentSetDebug a
@@ -113,29 +145,41 @@ instance AgentControl AgentRef where
   agentTerminate       (AgentRef a) = agentTerminate a
   agentWaitTermination (AgentRef a) = agentWaitTermination a
 
+  agentRunning         (AgentRef a) = agentRunning a
+  agentPaused          (AgentRef a) = agentPaused a
+  agentTerminated      (AgentRef a) = agentTerminated a
+
+instance AgentResult (AgentRef res) res where
+  agentResult     (AgentRef a) = agentResult a
+  agentWaitResult (AgentRef a) = agentWaitResult a
+
 --------------------------------------------------------------------------------
 
 -- | Agent is created from the corresponding descriptor.
-class CreateAgent from a where
-  createAgent :: from -> IO a
+class CreateAgent from res a | from -> res
+  where
+    createAgent :: from -> IO a
 
-class ( CreateAgent from (CreateAgentType from)
-      , ReactiveAgent    (CreateAgentType from)
-      , AgentControl     (CreateAgentType from)
+class ( CreateAgent from res (CreateAgentType from)
+      , ReactiveAgent        (CreateAgentType from)
+      , AgentControl         (CreateAgentType from)
+      , AgentResult          (CreateAgentType from) res
       ) =>
-  CreateAgentRef from where
+  CreateAgentRef from res where
     type CreateAgentType from :: *
-    createAgentRef :: from -> IO AgentRef
+    createAgentRef :: from -> IO (AgentRef res)
     createAgentRef from = do (ag :: CreateAgentType from) <- createAgent from
                              return $ AgentRef ag
 
 --------------------------------------------------------------------------------
 
-class (AgentControl a) =>
-  AgentInnerInterface a s | a -> s
+class (AgentControl a, AgentResult a res) =>
+  AgentInnerInterface a s res | a -> s, a -> res
     where
-      agentRef   :: a -> AgentRef
-      agentState :: a -> s
+      agentRef      :: a -> AgentRef res
+      agentState    :: a -> s
+      agentResultSuccess :: a -> res -> IO ()
+      agentResultFailure :: (Exception ex) => a -> ex -> IO ()
 
 
 data AgentExecState = AgentRun | AgentPause | AgentTerminate
@@ -143,6 +187,31 @@ data AgentExecState = AgentRun | AgentPause | AgentTerminate
 
 data NormalTermination = NormalTermination deriving (Show, Typeable)
 instance Exception NormalTermination
+
+data MessageThreadException =
+  forall ex . Exception ex => MessageThreadException ex
+  deriving Typeable
+instance Show MessageThreadException where
+  show (MessageThreadException ex) = showMessageException ex
+instance Exception MessageThreadException
+
+data ActionThreadException =
+  forall ex . Exception ex => ActionThreadException ex
+  deriving Typeable
+instance Show ActionThreadException where
+  show (ActionThreadException ex) = showActionException ex
+instance Exception ActionThreadException
+
+showActionException  ex = "Exception in action thread: "  ++ show ex
+showMessageException ex = "Exception in message thread: " ++ show ex
+
+data AgentThreadsException =
+  forall exM exA . (Exception exA, Exception exM) => AgentThreadsException exM exA
+  deriving Typeable
+instance Show AgentThreadsException where
+  show (AgentThreadsException exA exM) = showActionException  exA ++ "\n" ++
+                                         showMessageException exM
+instance Exception AgentThreadsException
 
 --------------------------------------------------------------------------------
 
@@ -154,11 +223,12 @@ data ReceivedMessage  = forall msg . Message msg =>
 -- | Active and Reactive agent implementation.
 --   Has internal state 's'.
 --   Message handling and action run in separate threads.
-data GenericAgent s = GenericAgent {
+data GenericAgent s res = GenericAgent {
     _name               :: String
   , _debug              :: TVar Bool
   , _state              :: s
   , _execState          :: TVar AgentExecState
+  , _result             :: TMVar (AgentExecutionResult res)
   , _messageBox         :: TQueue ReceivedMessage
   , _messagePriorityBox :: TQueue ReceivedMessage
   , _messageThread      :: TVar AgentThread
@@ -177,8 +247,35 @@ newAgentThread f = do  threadTerminated  <- newEmptyTMVarIO
           case cast ex of Just NormalTermination -> Nothing
                           _                      -> Just e
 
-awaitAgentThread :: AgentThread -> IO (Maybe SomeException)
-awaitAgentThread (AgentThread _ terminated) = atomically $ takeTMVar terminated
+agentThreadTerminated (AgentThread _ terminated) = fmap not . atomically
+                                                 $ isEmptyTMVar terminated
+
+-- | Waits for any of two thread to terminate. Then sets 'AgentTerminate'
+-- execution state (if not set already) and waits termination of another thread.
+-- Wraps exceptions in 'MessageThreadException', 'ActionThreadException' or
+-- 'AgentThreadsException'.
+awaitAgentThreads a = do
+    msgThread <- readTVar $ _messageThread a
+    actThread <- readTVar $ _actionThread a
+    let waitAgentThread (AgentThread _ terminated) = readTMVar terminated
+        waitMsgThread = waitAgentThread msgThread
+        waitActThread = waitAgentThread actThread
+    -- wait any thread termination
+    waitMsgThread <|> waitActThread
+    exState <- readTVar $ _execState a
+    -- set 'AgentTerminate' execution state, if not already set
+    unless (exState == AgentTerminate) $ _execState a `writeTVar` AgentTerminate
+    -- wait both threads to terminate
+    termination <- (,) <$> waitActThread
+                       <*> waitMsgThread
+    return $ case termination
+              of (Just (SomeException exA), Just (SomeException exM)) ->
+                        Just . SomeException $ AgentThreadsException  exA exM
+                 (Just (SomeException exA), Nothing)                  ->
+                        Just . SomeException $ ActionThreadException  exA
+                 (Nothing,                  Just (SomeException exM)) ->
+                        Just . SomeException $ MessageThreadException exM
+                 (Nothing,                  Nothing)                  -> Nothing
 
 putMessageInBox box msg = atomically $ box `writeTQueue` MessageNoResponse msg
 putMessageRespInBox box msg = do
@@ -189,10 +286,10 @@ putMessageRespInBox box msg = do
 
 setExecState exState a = atomically $ _execState a `writeTVar` exState
 
-data MessageHandling s = MessageHandling{
-    msgHandle   :: forall c msg . (AgentInnerInterface c s, Message msg) =>
+data MessageHandling s res = MessageHandling{
+    msgHandle   :: forall c msg . (AgentInnerInterface c s res, Message msg) =>
                     c -> msg -> Maybe (IO ())
-  , msgRespond  :: forall c msg resp . ( AgentInnerInterface c s
+  , msgRespond  :: forall c msg resp . ( AgentInnerInterface c s res
                                        , MessageResponse msg resp) =>
                     c -> msg -> Maybe (IO resp)
   }
@@ -200,46 +297,73 @@ data MessageHandling s = MessageHandling{
 handlesNoMessages = MessageHandling (selectMessageHandler [])
                                     (selectResponse [])
 
-instance ReactiveAgent (GenericAgent s) where
+instance ReactiveAgent (GenericAgent s res) where
   send a = putMessageInBox (_messageBox a)
   ask a  = putMessageRespInBox (_messageBox a)
 
   sendPriority a = putMessageInBox (_messagePriorityBox a)
   askPriority a  = putMessageRespInBox (_messagePriorityBox a)
 
-instance AgentControl (GenericAgent s) where
+instance AgentControl (GenericAgent s res) where
   agentName       = _name
   agentDebug      = readTVarIO . _debug
   agentSetDebug a = atomically . writeTVar (_debug a)
   agentStart      = setExecState AgentRun
   agentPause      = setExecState AgentPause
   agentTerminate  = setExecState AgentTerminate
-  agentWaitTermination a = do a `printDebug` "agentWaitTermination"
-                              waitAndReportTerminationReason "Action"  _actionThread
-                              waitAndReportTerminationReason "Message" _messageThread
-    where waitAndReportTerminationReason label getThreadVar = do
-            thread <- readTVarIO $ getThreadVar a
-            reason <- awaitAgentThread thread
-            printDebug a $ label ++ " thread terminated " ++
-                            maybe "normally."
-                                  (\err -> "with error: " ++ show err ++ ".")
-                                  reason
 
-instance AgentInnerInterface (GenericAgent s) s where
-  agentRef    = AgentRef
-  agentState  = _state
+  agentRunning    = isExecState AgentRun
+  agentPaused     = isExecState AgentPause
+  agentTerminated a = do msgThread <- readTVarIO $ _messageThread a
+                         actThread <- readTVarIO $_actionThread a
+                         (&&) <$> agentThreadTerminated msgThread
+                              <*> agentThreadTerminated actThread
+
+  agentWaitTermination a = do a `printDebug` "agentWaitTermination"
+                              mbException <- atomically $ awaitAgentThreads a
+                              printDebug a $ "Agent terminated " ++
+                                case mbException
+                                  of Just ex -> "with error:\n" ++ show ex
+                                     _       -> "normally."
+
+isExecState state = fmap (== state) . readTVarIO . _execState
+abortedExceptionResult = Left $ SomeException AgentExecutionAborted
+
+instance AgentResult (GenericAgent s res) res where
+  agentResult a = do mbResult   <- atomically . tryTakeTMVar $ _result a
+                     terminated <- agentTerminated a
+                     return $ if terminated && isNothing mbResult
+                               then Just abortedExceptionResult
+                               else mbResult
+
+  agentWaitResult a = do
+    wait <- atomically $  Right <$> takeTMVar (_result a)
+                      <|> Left  <$> awaitAgentThreads a
+    return $ either (Left . fromMaybe (SomeException AgentExecutionAborted))
+                    id wait
+
+instance AgentInnerInterface (GenericAgent s res) s res where
+    agentRef   = AgentRef
+    agentState = _state
+    agentResultSuccess a = putResult a . Right
+    agentResultFailure a = putResult a . Left . SomeException
+
+putResult a = atomically . putTMVar (_result a)
 
 --------------------------------------------------------------------------------
 
-data GenericAgentDescriptor s = GenericAgentDescriptor{
+data EmptyResult res = EmptyResult
+
+data GenericAgentDescriptor s res = GenericAgentDescriptor{
     agName          :: String
   , agDebug         :: Bool
-  , messageHandling :: MessageHandling s
-  , action          :: forall c . (AgentInnerInterface c s) => c -> IO ()
+  , messageHandling :: MessageHandling s res
+  , action          :: forall c . (AgentInnerInterface c s res) => c -> IO ()
   , initialState    :: IO s
+  , emptyResult     :: EmptyResult res
   }
 
-processMessages :: GenericAgent s -> MessageHandling s -> IO ()
+processMessages :: GenericAgent s res -> MessageHandling s res -> IO ()
 processMessages a mh = do
       mp <- atomically $    notRunState
                         <|> readMessage _messagePriorityBox
@@ -260,17 +384,18 @@ processMessages a mh = do
                                      respond =<< sequence (msgRespond mh a m)
 
 
-instance CreateAgent (GenericAgentDescriptor s) (GenericAgent s) where
+instance CreateAgent (GenericAgentDescriptor s res) res (GenericAgent s res) where
   createAgent d = do  debug     <- newTVarIO $ agDebug d
                       state     <- initialState d
                       exState   <- newTVarIO AgentPause
+                      result    <- newEmptyTMVarIO
                       msgBox    <- newTQueueIO
                       msgPBox   <- newTQueueIO
                       msgThreadVar <- newTVarIO undefined
                       actThreadVar <- newTVarIO undefined
 
                       let a = GenericAgent (agName d) debug
-                                           state exState
+                                           state exState result
                                            msgBox msgPBox
                                            msgThreadVar actThreadVar
 
@@ -291,17 +416,17 @@ instance CreateAgent (GenericAgentDescriptor s) (GenericAgent s) where
                    AgentTerminate -> throwIO NormalTermination
 
 
-instance CreateAgentRef (GenericAgentDescriptor s) where
-  type CreateAgentType (GenericAgentDescriptor s) = (GenericAgent s)
+instance CreateAgentRef (GenericAgentDescriptor s res) res where
+    type CreateAgentType (GenericAgentDescriptor s res) = (GenericAgent s res)
 
 --------------------------------------------------------------------------------
 
-mbHandle  :: (AgentInnerInterface c s, Message msg0, Message msg)
+mbHandle  :: (AgentInnerInterface c s res, Message msg0, Message msg)
           => (c -> msg  ->        IO ())
           ->  c -> msg0 -> Maybe (IO ())
 mbHandle f c msg = f c <$> cast msg
 
-selectMessageHandler  :: (AgentInnerInterface c s, Message msg)
+selectMessageHandler  :: (AgentInnerInterface c s res, Message msg)
                       => [c -> msg -> Maybe (IO ())]
                       ->  c -> msg -> Maybe (IO ())
 selectMessageHandler rfs c msg  = foldr (<|>) Nothing
@@ -310,14 +435,14 @@ selectMessageHandler rfs c msg  = foldr (<|>) Nothing
 
 --------------------------------------------------------------------------------
 
-mbResp  :: ( AgentInnerInterface c s
+mbResp  :: ( AgentInnerInterface c s res
            , MessageResponse msg0 resp0, MessageResponse msg resp )
         => (c -> msg  ->        IO resp)
         ->  c -> msg0 -> Maybe (IO resp0)
 mbResp f c msg = do msg' <- cast msg
                     cast $ f c msg'
 
-selectResponse  :: (AgentInnerInterface c s, MessageResponse msg resp)
+selectResponse  :: (AgentInnerInterface c s res, MessageResponse msg resp)
                 => [c -> msg -> Maybe (IO resp)]
                 ->  c -> msg -> Maybe (IO resp)
 selectResponse rfs c msg  = foldr (<|>) Nothing
