@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
 
-module Agent.PingPongAsk where
+module Agent.PingPong.Simple.Ask where
 
 
 import Agent

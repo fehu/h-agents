@@ -2,9 +2,9 @@
 module Main where
 
 import Agent.PingPong
-import qualified Agent.PingPongSend       as Send
-import qualified Agent.PingPongAsk        as Ask
-import qualified Agent.PingPongSendResult as SendRes
+import qualified Agent.PingPong.Simple.Send       as Send
+import qualified Agent.PingPong.Simple.Ask        as Ask
+import qualified Agent.PingPong.Simple.SendResult as SendRes
 
 import System.Environment
 

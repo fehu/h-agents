@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module Agent.PingPongSend where
+module Agent.PingPong.Simple.Send where
 
 import Agent
 import Agent.PingPong

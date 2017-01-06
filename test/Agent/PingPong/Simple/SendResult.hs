@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module Agent.PingPongSendResult where
+module Agent.PingPong.Simple.SendResult where
 
 import Agent
 import Agent.PingPong
-import qualified Agent.PingPongSend as Send
+import qualified Agent.PingPong.Simple.Send as Send
 
 import Data.Typeable (Typeable)
 import Data.IORef
