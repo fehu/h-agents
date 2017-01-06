@@ -29,7 +29,7 @@ module Agent(
 , AgentResult(..), AgentExecutionResult
 , EmptyResult(..)
 
-, AgentRef
+, AgentRef, SomeAgentRef, someAgentRef
 
 , CreateAgent(..), CreateAgentRef(..)
 
@@ -125,7 +125,7 @@ instance Exception AgentExecutionAborted
 
 --------------------------------------------------------------------------------
 
--- | Reference for 'ReactiveAgent'.
+-- | Reference for 'ReactiveAgent' with 'AgentControl' and specific 'AgentResult'.
 data AgentRef res = forall a . ( ReactiveAgent a
                                , AgentControl a
                                , AgentResult a res ) => AgentRef a
@@ -152,6 +152,35 @@ instance AgentControl (AgentRef res) where
 instance AgentResult (AgentRef res) res where
   agentResult     (AgentRef a) = agentResult a
   agentWaitResult (AgentRef a) = agentWaitResult a
+
+--------------------------------------------------------------------------------
+
+-- | Reference for 'ReactiveAgent' with 'AgentControl' and some 'AgentResult'.
+data SomeAgentRef = forall a res . ( ReactiveAgent a
+                                   , AgentControl a
+                                   , AgentResult a res ) => SomeAgentRef a
+
+someAgentRef :: AgentRef res -> SomeAgentRef
+someAgentRef (AgentRef a) = SomeAgentRef a
+
+instance ReactiveAgent SomeAgentRef where
+  send (SomeAgentRef a) = send a
+  ask  (SomeAgentRef a) = ask a
+  sendPriority (SomeAgentRef a) = sendPriority a
+  askPriority  (SomeAgentRef a) = askPriority a
+
+instance AgentControl SomeAgentRef where
+  agentName            (SomeAgentRef a) = agentName a
+  agentDebug           (SomeAgentRef a) = agentDebug a
+  agentSetDebug        (SomeAgentRef a) = agentSetDebug a
+  agentStart           (SomeAgentRef a) = agentStart a
+  agentPause           (SomeAgentRef a) = agentPause a
+  agentTerminate       (SomeAgentRef a) = agentTerminate a
+  agentWaitTermination (SomeAgentRef a) = agentWaitTermination a
+
+  agentRunning         (SomeAgentRef a) = agentRunning a
+  agentPaused          (SomeAgentRef a) = agentPaused a
+  agentTerminated      (SomeAgentRef a) = agentTerminated a
 
 --------------------------------------------------------------------------------
 
