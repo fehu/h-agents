@@ -70,7 +70,7 @@ pongDescriptor pingRef =
       , msgRespond = selectResponse []
       }
   , action = const yield
-  , emptyResult = EmptyResult :: EmptyResult Int
+  , emptyResult = EmptyResult :: EmptyResult Integer
   }
 
 
