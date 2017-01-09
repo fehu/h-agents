@@ -14,11 +14,13 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 module AgentRole (
 
   AgentRole(..)
--- , SomeRole(..)
+, isSameRole
+, SomeRole(..)
 
 , AgentRoleDescriptor(..)
 , CreateAgentOfRole(..)
@@ -29,7 +31,7 @@ module AgentRole (
 
 import Agent
 
---import Data.Function (on)
+import Data.Function (on)
 
 -----------------------------------------------------------------------------
 
@@ -43,12 +45,14 @@ class AgentRole r
 
 -----------------------------------------------------------------------------
 
---data SomeRole = forall r . AgentRole r => SomeRole r
---roleName' (SomeRole r) = roleName r
---
---instance Show SomeRole where show     = roleName'
---instance Eq   SomeRole where (==)     = (==)    `on` roleName'
---instance Ord  SomeRole where compare  = compare `on` roleName'
+data SomeRole = forall r . AgentRole r => SomeRole r
+roleName' (SomeRole r) = roleName r
+
+isSameRole r1 r2 = roleName r1 == roleName r2
+
+instance Show SomeRole where show     = roleName'
+instance Eq   SomeRole where (==)     = (==) `on` roleName'
+instance Ord  SomeRole where compare  = compare `on` roleName'
 
 -----------------------------------------------------------------------------
 
