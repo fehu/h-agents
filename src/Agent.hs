@@ -102,14 +102,14 @@ class AgentControl a
         agentPaused     :: a -> IO Bool
         agentTerminated :: a -> IO Bool
 
-        agentName     :: a -> String
+        agentId       :: a -> String
         agentDebug    :: a -> IO Bool
         agentSetDebug :: a -> Bool -> IO ()
         printDebug    :: a -> String -> IO ()
 
         printDebug a str = do debug <- agentDebug a
                               when debug . putStrLn $
-                                "[DEBUG][" ++ show (agentName a) ++ "] " ++ str
+                                "[DEBUG][" ++ show (agentId a) ++ "] " ++ str
 
 -----------------------------------------------------------------------------
 
@@ -137,7 +137,7 @@ instance ReactiveAgent (AgentRef res) where
   askPriority  (AgentRef a) = askPriority a
 
 instance AgentControl (AgentRef res) where
-  agentName            (AgentRef a) = agentName a
+  agentId              (AgentRef a) = agentId a
   agentDebug           (AgentRef a) = agentDebug a
   agentSetDebug        (AgentRef a) = agentSetDebug a
   agentStart           (AgentRef a) = agentStart a
@@ -170,7 +170,7 @@ instance ReactiveAgent SomeAgentRef where
   askPriority  (SomeAgentRef a) = askPriority a
 
 instance AgentControl SomeAgentRef where
-  agentName            (SomeAgentRef a) = agentName a
+  agentId              (SomeAgentRef a) = agentId a
   agentDebug           (SomeAgentRef a) = agentDebug a
   agentSetDebug        (SomeAgentRef a) = agentSetDebug a
   agentStart           (SomeAgentRef a) = agentStart a
@@ -334,7 +334,7 @@ instance ReactiveAgent (GenericAgent s res) where
   askPriority a  = putMessageRespInBox (_messagePriorityBox a)
 
 instance AgentControl (GenericAgent s res) where
-  agentName       = _name
+  agentId         = _name
   agentDebug      = readTVarIO . _debug
   agentSetDebug a = atomically . writeTVar (_debug a)
   agentStart      = setExecState AgentRun

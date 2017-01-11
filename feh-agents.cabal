@@ -21,7 +21,8 @@ library
                        AgentRole
                        AgentSystem
 
-  build-depends:       base >=4.9 && <4.10,
+  build-depends:       base >=4.8 && <4.9,
+                      --base >=4.9 && <4.10,
                        stm ==2.4.4.*,
                        containers ==0.5.7.*
 
@@ -56,3 +57,15 @@ executable ping-pong-role
                        Agent.PingPong.Role.Send
                        Agent.PingPong.Role.Ask
                        Agent.PingPong.Role.SendResult
+
+executable ping-pong-system
+  hs-source-dirs:      test
+  main-is:             Agent/PingPong/SimpleSystem/Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , feh-agents
+  default-language:    Haskell2010
+  other-modules:       Agent.PingPong
+                       Agent.PingPong.SimpleSystem.Send
+                       Agent.PingPong.SimpleSystem.Ask
+                       Agent.PingPong.SimpleSystem.SendResult

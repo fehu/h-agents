@@ -10,39 +10,35 @@
 -----------------------------------------------------------------------------
 
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module AgentSystem (
 
+  AgentSystem(..)
+
+, SimpleAgentSystem
+
+, module Agent
+
 ) where
 
-import AgentRole
+import Agent
 
-import Data.Typeable
 import Data.Map (Map)
 import qualified Data.Map  as Map
-import qualified Data.List as List
 
-import Control.Applicative ( (<|>) )
-import Control.Monad ( (<=<), forM )
+import Control.Monad ( (<=<), when )
 import Control.Concurrent.STM
 
 -----------------------------------------------------------------------------
 
-newtype AgentId = AgentId String deriving (Show, Eq, Ord)
-
-agentId :: (AgentControl a) => a -> AgentId
-agentId = AgentId . agentName
-
------------------------------------------------------------------------------
-
 class AgentSystem sys where
+    newAgentSystem :: IO sys
+
     newAgent  :: forall from res . CreateAgentRef from res =>
                   sys -> from -> IO (AgentRef res)
 
     listAgents :: sys -> IO [SomeAgentRef]
-    findAgent  :: sys -> AgentId -> IO (Maybe SomeAgentRef)
+    findAgent  :: sys -> String -> IO (Maybe SomeAgentRef)
 
     startAllAgents      :: sys -> IO ()
     pauseAllAgents      :: sys -> IO ()
@@ -56,92 +52,27 @@ class AgentSystem sys where
 
 -----------------------------------------------------------------------------
 
-data AgentsOfRole = forall r . AgentRole r =>
-    AgentsOfRole r [AgentRef (RoleResult r)]
-
-data AgentMaybeResultsOfRole = forall r . AgentRole r =>
-    AgentMaybeResultsOfRole r [(AgentId, Maybe (AgentExecutionResult (RoleResult r)))]
-
-data AgentResultsOfRole = forall r . AgentRole r =>
-    AgentResultsOfRole r [(AgentId, AgentExecutionResult (RoleResult r))]
-
-class (AgentSystem sys) => AgentSystemRoles sys where
-  listAgentsByRole  :: sys -> IO [AgentsOfRole]
-  findAgentOfRole   :: (AgentRole r) => sys -> r -> AgentId -> AgentRef (RoleResult r)
-
-  collectResult     :: (AgentRole r) => sys -> r -> AgentId
-                    -> IO (Maybe (AgentExecutionResult (RoleResult r)))
-  collectResults    :: (AgentRole r) => sys -> r
-                    -> IO [(AgentId, Maybe (AgentExecutionResult (RoleResult r)))]
-  collectAllResults :: sys -> IO [AgentMaybeResultsOfRole]
-
-  awaitResult       :: (AgentRole r) => sys -> r -> AgentId
-                    -> IO (AgentExecutionResult (RoleResult r))
-  awaitResults      :: (AgentRole r) => sys -> r
-                    -> IO [(AgentId, AgentExecutionResult (RoleResult r))]
-  awaitAllResults   :: sys -> IO [AgentResultsOfRole]
-
-  newAgentOfRole :: forall r . AgentRole r =>
-                    sys
-                 -> AgentRoleDescriptor r
-                 -> IO (RoleArgs r)
-                 -> IO (AgentRef (RoleResult r))
-
------------------------------------------------------------------------------
------------------------------------------------------------------------------
-
 data SimpleAgentSystem = SimpleAgentSystem{
-  _simpleAgentsRegister :: TVar (Map AgentId SomeAgentRef)
+  _simpleAgentsRegister :: TVar (Map String SomeAgentRef)
   }
 
 getSimpleRegister = readTVarIO . _simpleAgentsRegister
 
 instance AgentSystem SimpleAgentSystem where
+  newAgentSystem = SimpleAgentSystem <$> newTVarIO Map.empty
+
   listAgents = fmap Map.elems . getSimpleRegister
   findAgent sys aId = Map.lookup aId <$> getSimpleRegister sys
 
   newAgent sys from   = do ref <- createAgentRef from
-                           atomically . modifyTVar' (_simpleAgentsRegister sys)
-                                      $ Map.insert (agentId ref) (someAgentRef ref)
+                           atomically $ do
+                             let var = _simpleAgentsRegister sys
+                                 k = agentId ref
+                             m <- readTVar var
+                             if Map.notMember k m
+                               then var `writeTVar` Map.insert k (someAgentRef ref) m
+                               else fail $ "Agent with id '" ++ show k
+                                        ++ "' already exists in the system."
                            return ref
 
 -----------------------------------------------------------------------------
-
-type AgentsRoleMap r = Map AgentId (AgentRef (RoleResult r))
-
-data RoleRegister = forall r . (AgentRole r, Typeable (RoleResult r)) =>
-    RoleRegister r (TVar (AgentsRoleMap r))
-
-lookupAgentsOfRole :: (AgentRole r, Typeable (RoleResult r)) =>
-                      [RoleRegister] -> r -> IO (Maybe (AgentsRoleMap r))
-lookupAgentsOfRole rrs r = let mb = List.find (\(RoleRegister r' _) -> r' `isSameRole` r) rrs
-                           in case mb of Just (RoleRegister _ var) -> cast <$> readTVarIO var
-                                         _                         -> return Nothing
-
-data RoleAgentSystem = RoleAgentSystem{
-  _roleAgentsRegisters :: TVar [RoleRegister]
-  }
-
-instance AgentSystem RoleAgentSystem where
-  listAgents sys = do regs <- readTVarIO $ _roleAgentsRegisters sys
-                      maps <- forM regs $
-                        \(RoleRegister _ var) ->
-                          Map.map someAgentRef <$> readTVarIO var
-                      return $ concatMap Map.elems maps
-  findAgent sys aId = findAgent' aId =<< readTVarIO (_roleAgentsRegisters sys)
-
-  newAgent sys from = fail "Use `newAgentOfRole` instead of `newAgent`"
-
-findAgent' _ []                          = return Nothing
-findAgent' k (RoleRegister _ var : regs) =
-  do agMap <- readTVarIO var
-     maybe (findAgent' k regs)
-           (return . Just)
-           (someAgentRef <$> Map.lookup k agMap)
-
--- data GenericAgentSystem = GenericAgentSystem{
-    -- agentsRegister :: TVar (Map SomeRole (Map AgentId AgentRef))
-  -- }
-
--- instance AgentSystem GenericAgentSystem where
---   newAgent sys from =
