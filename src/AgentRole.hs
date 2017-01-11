@@ -23,6 +23,8 @@ module AgentRole (
 , SomeRole(..)
 
 , AgentRoleDescriptor(..)
+, modifyAgentDescriptorDescriptor
+
 , CreateAgentOfRole(..)
 
 , module Agent
@@ -32,6 +34,8 @@ module AgentRole (
 import Agent
 
 import Data.Function (on)
+
+import Control.Monad ( (<=<) )
 
 -----------------------------------------------------------------------------
 
@@ -62,6 +66,9 @@ data AgentRoleDescriptor r = AgentRoleDescriptor
 
 data CreateAgentOfRole r = CreateAgentOfRole (AgentRoleDescriptor r)
                                              (IO (RoleArgs r))
+
+modifyAgentDescriptorDescriptor (AgentRoleDescriptor r create) f =
+  AgentRoleDescriptor r $ f <=< create
 
 -----------------------------------------------------------------------------
 
