@@ -21,7 +21,7 @@ runPingPong nPings = do
   pongRef <- newIORef undefined
 
   putStrLn "<< Create Simple System >> "
-  sys  <- newAgentSystem :: IO SimpleAgentSystem
+  sys  <- newSimpleAgentSystem
   ping <- sys `newAgent` Ask.pingDescriptor nPings pongRef
   pong <- sys `newAgent` Ask.pongDescriptor
 

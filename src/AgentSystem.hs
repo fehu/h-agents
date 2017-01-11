@@ -15,7 +15,7 @@ module AgentSystem (
 
   AgentSystem(..)
 
-, SimpleAgentSystem
+, SimpleAgentSystem, newSimpleAgentSystem
 
 , module Agent
 
@@ -32,8 +32,6 @@ import Control.Concurrent.STM
 -----------------------------------------------------------------------------
 
 class AgentSystem sys where
-    newAgentSystem :: IO sys
-
     newAgent  :: forall from res . CreateAgentRef from res =>
                   sys -> from -> IO (AgentRef res)
 
@@ -52,6 +50,8 @@ class AgentSystem sys where
 
 -----------------------------------------------------------------------------
 
+newSimpleAgentSystem = SimpleAgentSystem <$> newTVarIO Map.empty
+
 data SimpleAgentSystem = SimpleAgentSystem{
   _simpleAgentsRegister :: TVar (Map String SomeAgentRef)
   }
@@ -59,8 +59,6 @@ data SimpleAgentSystem = SimpleAgentSystem{
 getSimpleRegister = readTVarIO . _simpleAgentsRegister
 
 instance AgentSystem SimpleAgentSystem where
-  newAgentSystem = SimpleAgentSystem <$> newTVarIO Map.empty
-
   listAgents = fmap Map.elems . getSimpleRegister
   findAgent sys aId = Map.lookup aId <$> getSimpleRegister sys
 

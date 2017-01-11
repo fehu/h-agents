@@ -63,7 +63,7 @@ pongDescriptor sys =
 --------------------------------------------------------------------------------
 
 runPingPong nPings = do putStrLn "<< Create Simple System >> "
-                        sys  <- newAgentSystem :: IO SimpleAgentSystem
+                        sys  <- newSimpleAgentSystem
                         ping <- sys `newAgent` pingDescriptor sys nPings
                         pong <- sys `newAgent` pongDescriptor sys
 
