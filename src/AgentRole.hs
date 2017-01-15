@@ -22,6 +22,8 @@ module AgentRole (
 , isSameRole
 , SomeRole(..)
 
+, AgentRefOfRole
+
 , AgentRoleDescriptor(..)
 , modifyAgentDescriptorDescriptor
 
@@ -57,6 +59,10 @@ isSameRole r1 r2 = roleName r1 == roleName r2
 instance Show SomeRole where show     = roleName'
 instance Eq   SomeRole where (==)     = (==) `on` roleName'
 instance Ord  SomeRole where compare  = compare `on` roleName'
+
+-----------------------------------------------------------------------------
+
+type AgentRefOfRole r = AgentRef (RoleResult r)
 
 -----------------------------------------------------------------------------
 
