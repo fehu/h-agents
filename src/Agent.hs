@@ -44,6 +44,7 @@ module Agent(
 
 import Data.Typeable (Typeable, cast)
 import Data.Maybe (fromMaybe, fromJust, isNothing)
+import Data.Function (on)
 
 import Control.Applicative ((<|>))
 import Control.Monad (forever, when, unless)
@@ -152,6 +153,12 @@ instance AgentControl (AgentRef res) where
 instance AgentResult (AgentRef res) res where
   agentResult     (AgentRef a) = agentResult a
   agentWaitResult (AgentRef a) = agentWaitResult a
+
+
+instance Eq  (AgentRef res) where (==)    = (==)    `on` agentId
+instance Ord (AgentRef res) where compare = compare `on` agentId
+
+instance Show (AgentRef res) where show ref = "AgentRef " ++ show (agentId ref)
 
 --------------------------------------------------------------------------------
 
