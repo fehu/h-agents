@@ -17,7 +17,9 @@
 module AgentRoleSystem (
 
   AgentSystemRoles(..)
-, AgentsOfRole(..), AgentMaybeResultsOfRole(..), AgentResultsOfRole(..)
+, AgentsOfRole(..), AgentsOfRoles
+, AgentMaybeResultsOfRole(..), AgentMaybeResultsOfRoles
+, AgentResultsOfRole(..), AgentResultsOfRoles
 
 , RoleAgentSystem, newRoleAgentSystem
 
@@ -42,19 +44,22 @@ import Control.Concurrent.STM
 
 -----------------------------------------------------------------------------
 
+type AgentsOfRoles = Map SomeRole AgentsOfRole
 data AgentsOfRole = forall r . AgentRole' r =>
     AgentsOfRole r [AgentRef (RoleResult r)]
 
+type AgentMaybeResultsOfRoles = Map SomeRole AgentMaybeResultsOfRole
 data AgentMaybeResultsOfRole = forall r . AgentRole' r =>
     AgentMaybeResultsOfRole r [(String, Maybe (AgentExecutionResult (RoleResult r)))]
 
+type AgentResultsOfRoles = Map SomeRole AgentResultsOfRole
 data AgentResultsOfRole = forall r . AgentRole' r =>
     AgentResultsOfRole r [(String, AgentExecutionResult (RoleResult r))]
 
 type AgentRole' r = (AgentRole r, Typeable (RoleResult r), Show (RoleResult r))
 
 class AgentSystemRoles sys where
-  listAgentsByRole  :: sys -> IO [AgentsOfRole]
+  listAgentsByRole  :: sys -> IO AgentsOfRoles
   listAgentsOfRole  :: (AgentRole' r) => sys -> r
                     -> IO [AgentRef (RoleResult r)]
   findAgentOfRole   :: (AgentRole' r) => sys -> r -> String
@@ -64,13 +69,13 @@ class AgentSystemRoles sys where
                     -> IO (Maybe (AgentExecutionResult (RoleResult r)))
   collectResults    :: (AgentRole' r) => sys -> r
                     -> IO [(String, Maybe (AgentExecutionResult (RoleResult r)))]
-  collectAllResults :: sys -> IO [AgentMaybeResultsOfRole]
+  collectAllResults :: sys -> IO AgentMaybeResultsOfRoles
 
   awaitResult       :: (AgentRole' r) => sys -> r -> String
                     -> IO (AgentExecutionResult (RoleResult r))
   awaitResults      :: (AgentRole' r) => sys -> r
                     -> IO [(String, AgentExecutionResult (RoleResult r))]
-  awaitAllResults   :: sys -> IO [AgentResultsOfRole]
+  awaitAllResults   :: sys -> IO AgentResultsOfRoles
 
   newAgentOfRole :: forall r . AgentRole' r =>
                     sys
@@ -80,21 +85,20 @@ class AgentSystemRoles sys where
 
   collectResult s r = maybe (return Nothing) agentResult <=< findAgentOfRole s r
   collectResults s  = mapM (agentIdM agentResult) <=< listAgentsOfRole s
-  collectAllResults = agentsOfRoleResult <=< listAgentsByRole
-    where agentsOfRoleResult []                          = return []
-          agentsOfRoleResult (AgentsOfRole r refs : ars) =
-            (:) <$> (AgentMaybeResultsOfRole r <$>
-                      mapM (agentIdM agentResult) refs)
-                <*> agentsOfRoleResult ars
+  collectAllResults = mapM' agentsOfRoleResult <=< listAgentsByRole
+    where agentsOfRoleResult (AgentsOfRole r refs) =
+            AgentMaybeResultsOfRole r <$> mapM (agentIdM agentResult) refs
 
   awaitResult s r i = maybe (fail $ notFound r i) agentWaitResult
                     =<< findAgentOfRole s r i
   awaitResults s    = mapM (agentIdM agentWaitResult) <=< listAgentsOfRole s
-  awaitAllResults   = mapM waitResults <=< listAgentsByRole
+  awaitAllResults   = mapM' waitResults <=< listAgentsByRole
     where waitResults (AgentsOfRole r refs) =
             AgentResultsOfRole r <$> mapM (agentIdM agentWaitResult) refs
 
 
+mapM' :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
+mapM' f m = Map.fromList <$> mapM (\(k,v) -> (,) k <$> f v ) (Map.assocs m)
 
 agentIdM f ag = (,) <$> return (agentId ag) <*> f ag
 
@@ -163,12 +167,13 @@ findAgent' k (RoleRegister _ var : regs) =
 
 instance AgentSystemRoles RoleAgentSystem where
   listAgentsByRole = atomically
-                   . (mkAgentsOfRole <=< readTVar . _roleAgentsRegisters)
+                   . (mkAgentsOfRole [] <=< readTVar . _roleAgentsRegisters)
       where
-        mkAgentsOfRole [] = return []
-        mkAgentsOfRole (RoleRegister r var : regs) =
+        mkAgentsOfRole acc [] = return . Map.fromList $ reverse acc
+        mkAgentsOfRole acc (RoleRegister r var : regs) =
           do rMap <- readTVar var
-             (AgentsOfRole r (Map.elems rMap) :) <$> mkAgentsOfRole regs
+             let new = AgentsOfRole r $ Map.elems rMap
+             mkAgentsOfRole ((SomeRole r, new):acc) regs
 
   listAgentsOfRole s r = maybe [] Map.elems <$> lookupAgentsOfRole' s r
 
