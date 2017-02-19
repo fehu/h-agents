@@ -223,7 +223,7 @@ data GenericAgentDescriptor s res = GenericAgentDescriptor{
     agName          :: String
   , agDebug         :: Bool
   , messageHandling :: MessageHandling s res
-  , action          :: forall c . (AgentInnerInterface c s res) => c -> IO ()
+  , action          :: AgentAction s res
   , initialState    :: IO s
   , emptyResult     :: EmptyResult res
   }
@@ -250,7 +250,7 @@ instance CreateAgent (GenericAgentDescriptor s res) res (GenericAgent s res) whe
                       msgThread <- newAgentThread . forever
                                 $  processMessages a (messageHandling d)
                       actThread <- newAgentThread . forever
-                                . withExecState a $ action d a
+                                . withExecState a $ runAgentAction (action d) a
                       atomically $  msgThreadVar `writeTVar` msgThread
                                  >> actThreadVar `writeTVar` actThread
                       return a

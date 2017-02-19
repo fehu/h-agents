@@ -20,14 +20,14 @@ module Agent.Behavior(
 
 -- * Message Handling
 
-, MessageHandling(..), handlesNoMessages
+, MessageHandling(..), handlesNoMessages, combineMessageHandling
 
 , mbHandle, selectMessageHandler
 , mbResp, selectResponse
 
 -- * Action
 
-, AgentAction(..), agentNoAction
+, AgentAction(..), agentNoAction, runAgentAction
 
 ) where
 
@@ -66,6 +66,13 @@ data MessageHandling s res = MessageHandling{
 handlesNoMessages = MessageHandling (selectMessageHandler [])
                                     (selectResponse [])
 
+
+combineMessageHandling :: MessageHandling s res -> MessageHandling s res
+                       -> MessageHandling s res
+combineMessageHandling h1 h2 = MessageHandling
+  (\i msg -> msgHandle  h1 i msg <|> msgHandle  h2 i msg)
+  (\i msg -> msgRespond h1 i msg <|> msgRespond h2 i msg)
+
 ------------------------------------------------------------------------------
 
 mbHandle  :: (AgentInnerInterface c s res, Message msg0, Message msg)
@@ -103,5 +110,8 @@ data AgentAction s res = AgentAction {
 
 agentNoAction :: AgentAction s res
 agentNoAction = AgentAction $ const yield
+
+runAgentAction :: AgentInnerInterface i s res => AgentAction s res -> i -> IO()
+runAgentAction (AgentAction act) = act
 
 --------------------------------------------------------------------------------
