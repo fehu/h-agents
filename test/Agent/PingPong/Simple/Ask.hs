@@ -23,7 +23,8 @@ pingDescriptor nPings pongRef =
     , initialState = do nPingsRef <- newIORef nPings
                         return (nPingsRef, pongRef)
     , messageHandling = handlesNoMessages
-    , action = \c -> do let (i', pong') = agentState c
+    , action = AgentAction $
+               \c -> do let (i', pong') = agentState c
                         i     <- readIORef i'
                         pong  <- readIORef pong'
                         if i > 0 then do putStrLn $ "Ping (" ++ show i ++ ")"
@@ -49,7 +50,7 @@ pongDescriptor =
               mbResp $ \_ Ping -> putStrLn "Pong" >> return Pong
             ]
         }
-    , action = const yield
+    , action = agentNoAction
     }
 
 

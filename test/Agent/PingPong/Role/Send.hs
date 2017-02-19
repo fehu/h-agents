@@ -16,16 +16,14 @@ data PongRole = PongRole
 
 --------------------------------------------------------------------------------
 
+instance RoleName PingRole where roleName _ = "Ping"
 instance AgentRole PingRole where
-  roleName _ = "Ping"
-
   type RoleState PingRole  = (IORef Integer, IORef SomeAgentRef, IORef Bool)
   type RoleResult PingRole = ()
   type RoleArgs PingRole   = (Integer, IORef SomeAgentRef)
 
+instance RoleName PongRole where roleName _ = "Pong"
 instance AgentRole PongRole where
-  roleName _ = "Pong"
-
   type RoleState PongRole  = IORef SomeAgentRef
   type RoleResult PongRole = ()
   type RoleArgs PongRole   = IORef SomeAgentRef

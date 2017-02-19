@@ -29,7 +29,8 @@ pingDescriptor nPings pongRef =
                       ]
       , msgRespond  = selectResponse []
       }
-  , action = \c -> do let (_, _, firstTime') = agentState c
+  , action = AgentAction $
+             \c -> do let (_, _, firstTime') = agentState c
                       firstTime <- readIORef firstTime'
                       when firstTime $ do sendPing c
                                           firstTime' `writeIORef` False
@@ -59,7 +60,7 @@ pongDescriptor pingRef =
           ]
       , msgRespond = selectResponse []
       }
-  , action = const yield
+  , action = agentNoAction
   , emptyResult = EmptyResult :: EmptyResult ()
   }
 
