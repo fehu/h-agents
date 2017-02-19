@@ -18,7 +18,7 @@
 
 module AgentSystem.Role(
 
-  AgentRole(..)
+  AgentRole(..), RoleName(..), RoleT(..)
 , isSameRole
 , SomeRole(..)
 
@@ -42,15 +42,22 @@ import Control.Monad ( (<=<) )
 
 -----------------------------------------------------------------------------
 
-class AgentRole r
-  where
-    roleName :: r -> String
+class RoleName r where roleName :: r -> String
 
+class (RoleName r) => AgentRole r
+  where
     type RoleState  r :: *
     type RoleResult r :: *
     type RoleArgs   r :: *
 
 -----------------------------------------------------------------------------
+
+newtype RoleT r a = RoleT r
+instance (RoleName r) => RoleName (RoleT r a)
+  where roleName (RoleT r) = roleName r
+
+-----------------------------------------------------------------------------
+
 
 data SomeRole = forall r . AgentRole r => SomeRole r
 roleName' (SomeRole r) = roleName r
