@@ -2,7 +2,8 @@
 
 module Agent.PingPong.Role.Send where
 
-import AgentRole
+import AgentSystem.Generic
+import AgentSystem.Role
 import Agent.PingPong
 import qualified Agent.PingPong.Simple.Send as Send
 
@@ -31,10 +32,10 @@ instance AgentRole PongRole where
 
 --------------------------------------------------------------------------------
 
-pingRoleDescriptor = AgentRoleDescriptor PingRole
+pingRoleDescriptor = genericRoleDescriptor PingRole
                     (return . uncurry Send.pingDescriptor)
 
-pongRoleDescriptor = AgentRoleDescriptor PongRole
+pongRoleDescriptor = genericRoleDescriptor PongRole
                     (return . Send.pongDescriptor)
 
 --------------------------------------------------------------------------------

@@ -1,6 +1,8 @@
-module Agent.PingPong.RoleSystem.SendResult where
+{-# LANGUAGE FlexibleContexts #-}
 
-import AgentRoleSystem
+module Agent.PingPong.System.SendResult where
+
+import AgentSystem.Generic
 import Agent.PingPong
 import Agent.PingPong.Role.SendResult hiding (runPingPong)
 
@@ -8,16 +10,16 @@ import Data.IORef
 
 -----------------------------------------------------------------------------
 
-modifyName d i = modifyAgentDescriptorDescriptor d
-               $ \d -> return d { agName = agName d ++ "-" ++ show i }
+modifyName d i = unsafeModifyGenericRoleDescriptor d
+               $ \d -> d { agName = agName d ++ "-" ++ show i }
 
 pingRole = modifyName pingRoleDescriptor
 pongRole = modifyName pongRoleDescriptor
 
 -----------------------------------------------------------------------------
 
-runPingPong nPings = do putStrLn "<< Create Simple System >> "
-                        sys  <- newRoleAgentSystem
+runPingPong nPings = do putStrLn "<< Create System >> "
+                        sys  <- newSimpleAgentSystem
                         let newPingPongPair i = do
                                   pingRef <- newIORef undefined
                                   pongRef <- newIORef undefined

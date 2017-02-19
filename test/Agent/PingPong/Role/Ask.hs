@@ -2,7 +2,7 @@
 
 module Agent.PingPong.Role.Ask where
 
-import AgentRole
+import AgentSystem.Generic
 import Agent.PingPong
 import qualified Agent.PingPong.Simple.Ask as Ask
 
@@ -31,10 +31,10 @@ instance AgentRole PongRole where
 
 --------------------------------------------------------------------------------
 
-pingRoleDescriptor = AgentRoleDescriptor PingRole
+pingRoleDescriptor = genericRoleDescriptor PingRole
                     (return . uncurry Ask.pingDescriptor)
 
-pongRoleDescriptor = AgentRoleDescriptor PongRole
+pongRoleDescriptor = genericRoleDescriptor PongRole
                     (const $ return Ask.pongDescriptor)
 
 --------------------------------------------------------------------------------

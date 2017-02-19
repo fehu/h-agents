@@ -2,7 +2,7 @@
 
 module Agent.PingPong.Simple.SendResult where
 
-import Agent
+import Agent.Generic
 import Agent.PingPong
 import qualified Agent.PingPong.Simple.Send as Send
 

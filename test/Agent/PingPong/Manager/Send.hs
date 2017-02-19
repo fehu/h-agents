@@ -1,9 +1,10 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Agent.PingPong.SimpleSystem.Send where
+module Agent.PingPong.Manager.Send where
 
-import AgentSystem
+import Agent.Generic
+import AgentSystem.Manager
 import Agent.PingPong
 
 import Control.Monad (when)
@@ -66,17 +67,17 @@ pongDescriptor sys =
 
 --------------------------------------------------------------------------------
 
-runPingPong nPings = do putStrLn "<< Create Simple System >> "
-                        sys  <- newSimpleAgentSystem
-                        ping <- sys `newAgent` pingDescriptor sys nPings
-                        pong <- sys `newAgent` pongDescriptor sys
+runPingPong nPings = do putStrLn "<< Create Agents Manager >> "
+                        m  <- newSimpleAgentsManager
+                        ping <- m `newAgent` pingDescriptor m nPings
+                        pong <- m `newAgent` pongDescriptor m
 
-                        putStrLn "Starting system"
-                        startAllAgents sys
+                        putStrLn "Starting agents"
+                        startAllAgents m
 
                         putStrLn "Waiting PING termination"
                         agentWaitTermination ping
 
-                        putStrLn "Terminating system"
-                        terminateAllAgents sys
+                        putStrLn "Terminating agents"
+                        terminateAllAgents m
                         putStrLn "Finished"

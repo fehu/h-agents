@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                feh-agents
-version:             0.0.1.1
+version:             0.0.2.0
 synopsis:            -
 -- description:
 homepage:            -
@@ -18,13 +18,19 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Agent
-                       AgentRole
+                       Agent.Behavior
+                       Agent.Generic
                        AgentSystem
-                       AgentRoleSystem
+                       AgentSystem.Role
+                       AgentSystem.Manager
+                       AgentSystem.Generic
 
   build-depends:       base >=4.9 && <4.10,
                        stm ==2.4.*,
                        containers ==0.5.*
+
+  other-modules:       Agent.Message
+                       Agent.Interface
 
   hs-source-dirs:      src
   default-language:    Haskell2010
@@ -58,23 +64,23 @@ executable ping-pong-role
                        Agent.PingPong.Role.Ask
                        Agent.PingPong.Role.SendResult
 
+executable ping-pong-manager
+  hs-source-dirs:      test
+  main-is:             Agent/PingPong/Manager/Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , feh-agents
+  default-language:    Haskell2010
+  other-modules:       Agent.PingPong
+                       Agent.PingPong.Manager.Send
+                       Agent.PingPong.Manager.Ask
+
 executable ping-pong-system
   hs-source-dirs:      test
-  main-is:             Agent/PingPong/SimpleSystem/Main.hs
+  main-is:             Agent/PingPong/System/Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , feh-agents
   default-language:    Haskell2010
   other-modules:       Agent.PingPong
-                       Agent.PingPong.SimpleSystem.Send
-                       Agent.PingPong.SimpleSystem.Ask
-
-executable ping-pong-role-system
-  hs-source-dirs:      test
-  main-is:             Agent/PingPong/RoleSystem/Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  build-depends:       base
-                     , feh-agents
-  default-language:    Haskell2010
-  other-modules:       Agent.PingPong
-                       Agent.PingPong.RoleSystem.SendResult
+                       Agent.PingPong.System.SendResult

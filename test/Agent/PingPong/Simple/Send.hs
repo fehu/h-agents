@@ -2,7 +2,7 @@
 
 module Agent.PingPong.Simple.Send where
 
-import Agent
+import Agent.Generic
 import Agent.PingPong
 
 import Data.Typeable

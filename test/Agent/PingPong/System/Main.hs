@@ -2,7 +2,7 @@
 module Main where
 
 import Agent.PingPong
-import qualified Agent.PingPong.RoleSystem.SendResult as SendRes
+import qualified Agent.PingPong.System.SendResult as SendRes
 
 
 main = do pingCount <- getPingCount

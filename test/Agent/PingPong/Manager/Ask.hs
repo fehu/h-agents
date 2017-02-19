@@ -1,9 +1,10 @@
 {-# LANGUAGE TypeFamilies #-}
 
-module Agent.PingPong.SimpleSystem.Ask where
+module Agent.PingPong.Manager.Ask where
 
 
-import AgentSystem
+import Agent
+import AgentSystem.Manager
 import Agent.PingPong
 
 import qualified Agent.PingPong.Simple.Ask as Ask
@@ -20,15 +21,15 @@ type instance ExpectedResponse Ping = Pong
 runPingPong nPings = do
   pongRef <- newIORef undefined
 
-  putStrLn "<< Create Simple System >> "
-  sys  <- newSimpleAgentSystem
-  ping <- sys `newAgent` Ask.pingDescriptor nPings pongRef
-  pong <- sys `newAgent` Ask.pongDescriptor
+  putStrLn "<< Create Simple Manager >> "
+  m  <- newSimpleAgentsManager
+  ping <- m `newAgent` Ask.pingDescriptor nPings pongRef
+  pong <- m `newAgent` Ask.pongDescriptor
 
   pongRef `writeIORef` pong
 
-  putStrLn "Starting system"
-  startAllAgents sys
+  putStrLn "Starting agents"
+  startAllAgents m
 
   putStrLn "Waiting PING termination"
   agentWaitTermination ping

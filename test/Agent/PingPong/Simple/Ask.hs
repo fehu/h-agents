@@ -3,7 +3,7 @@
 module Agent.PingPong.Simple.Ask where
 
 
-import Agent
+import Agent.Generic
 import Agent.PingPong
 
 import Data.IORef

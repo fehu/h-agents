@@ -1,11 +1,10 @@
 -----------------------------------------------------------------------------
 --
--- Module      :  AgentRole
+-- Module      :  AgentSystem.Role
 -- License     :  MIT
 --
 -- Maintainer  :  kdn.kovalev@gmail.com
 -- Stability   :  experimental
--- Portability :  non-portable (requires STM)
 --
 -----------------------------------------------------------------------------
 
@@ -15,17 +14,17 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ConstraintKinds #-}
 
-module AgentRole (
+module AgentSystem.Role(
 
   AgentRole(..)
 , isSameRole
 , SomeRole(..)
 
-, AgentRefOfRole
+, AgentOfRole, AgentRefOfRole
 
-, AgentRoleDescriptor(..)
-, modifyAgentDescriptorDescriptor
+, AgentRoleDescriptor(..), unsafeModifyAgentRoleDescriptor
 
 , CreateAgentOfRole(..)
 
@@ -35,7 +34,9 @@ module AgentRole (
 
 import Agent
 
+import Data.Maybe (fromJust)
 import Data.Function (on)
+import Data.Typeable (Typeable, cast)
 
 import Control.Monad ( (<=<) )
 
@@ -62,32 +63,37 @@ instance Ord  SomeRole where compare  = compare `on` roleName'
 
 -----------------------------------------------------------------------------
 
+type AgentOfRole a r = Agent a (RoleResult r)
 type AgentRefOfRole r = AgentRef (RoleResult r)
 
 -----------------------------------------------------------------------------
 
-data AgentRoleDescriptor r = AgentRoleDescriptor
-    r
-    (RoleArgs r -> IO (GenericAgentDescriptor (RoleState r) (RoleResult r)))
+-- data AgentRoleDescriptor r ag = forall from . ( CreateAgent from (RoleResult r) ag ) =>
+--   AgentRoleDescriptor r (RoleArgs r -> IO from)
 
-data CreateAgentOfRole r = CreateAgentOfRole (AgentRoleDescriptor r)
-                                             (IO (RoleArgs r))
+data AgentRoleDescriptor r ag = forall from . ( CreateAgent from (RoleResult r) ag
+                                              , Typeable from) =>
+  AgentRoleDescriptor r (RoleArgs r -> IO from)
 
-modifyAgentDescriptorDescriptor (AgentRoleDescriptor r create) f =
-  AgentRoleDescriptor r $ f <=< create
+data CreateAgentOfRole r ag = CreateAgentOfRole (AgentRoleDescriptor r ag)
+                                                (IO (RoleArgs r))
+
+unsafeModifyAgentRoleDescriptor :: (Typeable d, CreateAgent d (RoleResult r) ag) =>
+                                   AgentRoleDescriptor r ag -> (d -> d)
+                                -> AgentRoleDescriptor r ag
+unsafeModifyAgentRoleDescriptor (AgentRoleDescriptor r create) f =
+  AgentRoleDescriptor r (fmap (f . fromJust . cast) . create)
 
 -----------------------------------------------------------------------------
 
-instance ( RoleState r ~ s, RoleResult r ~ res ) =>
-  CreateAgent (CreateAgentOfRole r) res (GenericAgent s res)
+instance ( RoleResult r ~ res ) =>
+  CreateAgent (CreateAgentOfRole r ag) res ag
     where
       createAgent (CreateAgentOfRole (AgentRoleDescriptor _ create) args) =
         createAgent =<< create =<< args
 
-
-instance ( RoleResult r ~ res ) =>
-  CreateAgentRef (CreateAgentOfRole r) res where
-    type CreateAgentType (CreateAgentOfRole r) = GenericAgent (RoleState r)
-                                                              (RoleResult r)
+instance ( Agent ag res, RoleResult r ~ res ) =>
+  CreateAgentRef (CreateAgentOfRole r ag) res where
+    type CreateAgentType (CreateAgentOfRole r ag) = ag
 
 -----------------------------------------------------------------------------
