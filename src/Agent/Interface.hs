@@ -151,6 +151,9 @@ instance AgentControl SomeAgentRef where
   agentTerminated      (SomeAgentRef a) = agentTerminated a
 
 
+instance Eq  SomeAgentRef where (==)    = (==)    `on` agentId
+instance Ord SomeAgentRef where compare = compare `on` agentId
+
 instance Show SomeAgentRef where
   show (SomeAgentRef ref) = "AgentRef " ++ show (agentId ref)
 

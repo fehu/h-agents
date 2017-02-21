@@ -42,7 +42,7 @@ import Control.Concurrent.STM
 
 -----------------------------------------------------------------------------
 
-class AgentSystem sys where
+class (AgentsManager sys) => AgentSystem sys where
 
   listAgentsByRole  :: sys -> IO AgentsOfRoles
   listAgentsOfRole  :: (AgentRole' r) => sys -> r
@@ -53,13 +53,13 @@ class AgentSystem sys where
   collectResult     :: (AgentRole' r) => sys -> r -> String
                     -> IO (Maybe (AgentExecutionResult (RoleResult r)))
   collectResults    :: (AgentRole' r) => sys -> r
-                    -> IO [(String, Maybe (AgentExecutionResult (RoleResult r)))]
+                    -> IO [(AgentRefOfRole r, Maybe (AgentExecutionResult (RoleResult r)))]
   collectAllResults :: sys -> IO AgentMaybeResultsOfRoles
 
   awaitResult       :: (AgentRole' r) => sys -> r -> String
                     -> IO (AgentExecutionResult (RoleResult r))
   awaitResults      :: (AgentRole' r) => sys -> r
-                    -> IO [(String, AgentExecutionResult (RoleResult r))]
+                    -> IO [(AgentRefOfRole r, AgentExecutionResult (RoleResult r))]
   awaitAllResults   :: sys -> IO AgentResultsOfRoles
 
   newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r ) =>
@@ -69,20 +69,20 @@ class AgentSystem sys where
                  -> IO (AgentRef (RoleResult r))
 
   collectResult s r = maybe (return Nothing) agentResult <=< findAgentOfRole s r
-  collectResults s  = mapM (agentIdM agentResult) <=< listAgentsOfRole s
+  collectResults s  = mapM (agentM agentResult) <=< listAgentsOfRole s
   collectAllResults = mapM' agentsOfRoleResult <=< listAgentsByRole
     where agentsOfRoleResult (AgentsOfRole r refs) =
-            AgentMaybeResultsOfRole r <$> mapM (agentIdM agentResult) refs
+            AgentMaybeResultsOfRole r <$> mapM (agentM agentResult) refs
 
   awaitResult s r i = maybe (fail $ notFound r i) agentWaitResult
                     =<< findAgentOfRole s r i
-  awaitResults s    = mapM (agentIdM agentWaitResult) <=< listAgentsOfRole s
+  awaitResults s    = mapM (agentM agentWaitResult) <=< listAgentsOfRole s
   awaitAllResults   = mapM' waitResults <=< listAgentsByRole
     where waitResults (AgentsOfRole r refs) =
-            AgentResultsOfRole r <$> mapM (agentIdM agentWaitResult) refs
+            AgentResultsOfRole r <$> mapM (agentM agentWaitResult) refs
 
 
-agentIdM f ag = (,) <$> return (agentId ag) <*> f ag
+agentM f ag = (,) <$> return ag <*> f ag
 
 mapM' :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
 mapM' f m = Map.fromList <$> mapM (\(k,v) -> (,) k <$> f v ) (Map.assocs m)
@@ -102,20 +102,20 @@ type AgentRole' r = (AgentRole r, Typeable (RoleResult r), Show (RoleResult r))
 
 type AgentResultsOfRoles = Map SomeRole AgentResultsOfRole
 data AgentResultsOfRole = forall r . AgentRole' r =>
-    AgentResultsOfRole r [(String, AgentExecutionResult (RoleResult r))]
+    AgentResultsOfRole r [(AgentRefOfRole r, AgentExecutionResult (RoleResult r))]
 
 -----------------------------------------------------------------------------
 
 type AgentMaybeResultsOfRoles = Map SomeRole AgentMaybeResultsOfRole
 data AgentMaybeResultsOfRole = forall r . AgentRole' r =>
-    AgentMaybeResultsOfRole r [(String, Maybe (AgentExecutionResult (RoleResult r)))]
+    AgentMaybeResultsOfRole r [(AgentRefOfRole r, Maybe (AgentExecutionResult (RoleResult r)))]
 
 -----------------------------------------------------------------------------
 
 printResults r l =
   let header  = "Results for role '" ++ roleName r ++ "':"
       results = do (k, res) <- l
-                   ["  <" ++ k ++ "> " ++ show res]
+                   ["  <" ++ agentId k ++ "> " ++ show res]
   in unlines $ header : results
 
 instance Show AgentMaybeResultsOfRole where
@@ -128,6 +128,11 @@ instance Show AgentResultsOfRole where
 
 data SomeAgentSystem = forall sys . AgentSystem sys =>
      SomeAgentSystem sys
+
+instance AgentsManager SomeAgentSystem where
+  listAgents (SomeAgentSystem sys) = listAgents sys
+  findAgent  (SomeAgentSystem sys) = findAgent sys
+
 
 instance AgentSystem SomeAgentSystem where
   listAgentsByRole (SomeAgentSystem sys) = listAgentsByRole sys
