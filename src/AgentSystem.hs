@@ -19,6 +19,7 @@ module AgentSystem(
   AgentSystem(..)
 , AgentRole', AgentsOfRoles
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
+, SomeAgentSystem(..)
 
 , SimpleAgentSystem, newSimpleAgentSystem
 
@@ -123,6 +124,16 @@ instance Show AgentMaybeResultsOfRole where
 instance Show AgentResultsOfRole where
   show (AgentResultsOfRole r l) = printResults r l
 
+-----------------------------------------------------------------------------
+
+data SomeAgentSystem = forall sys . AgentSystem sys =>
+     SomeAgentSystem sys
+
+instance AgentSystem SomeAgentSystem where
+  listAgentsByRole (SomeAgentSystem sys) = listAgentsByRole sys
+  listAgentsOfRole (SomeAgentSystem sys) = listAgentsOfRole sys
+  findAgentOfRole  (SomeAgentSystem sys) = findAgentOfRole  sys
+  newAgentOfRole   (SomeAgentSystem sys) = newAgentOfRole   sys
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------

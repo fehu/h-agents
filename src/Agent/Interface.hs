@@ -150,6 +150,10 @@ instance AgentControl SomeAgentRef where
   agentPaused          (SomeAgentRef a) = agentPaused a
   agentTerminated      (SomeAgentRef a) = agentTerminated a
 
+
+instance Show SomeAgentRef where
+  show (SomeAgentRef ref) = "AgentRef " ++ show (agentId ref)
+
 ------------------------------------------------------------------------------
 
 -- | Agent is created from the corresponding descriptor.
