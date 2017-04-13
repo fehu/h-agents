@@ -18,8 +18,7 @@
 
 module AgentSystem.Role(
 
-  AgentRole(..), RoleName(..), RoleT(..)
-, isSameRole
+  AgentRole(..), RoleName(..), RoleT(..) -- , roleT
 , SomeRole(..)
 
 , AgentOfRole, AgentRefOfRole
@@ -38,11 +37,24 @@ import Data.Maybe (fromJust)
 import Data.Function (on)
 import Data.Typeable (Typeable, cast)
 
+-- import Data.List (intercalate)
+-- import Data.Set (Set)
+
+-- import qualified Data.Set as Set
+
 import Control.Monad ( (<=<) )
 
 -----------------------------------------------------------------------------
 
-class RoleName r where roleName :: r -> String
+class RoleName r where
+  roleName :: r -> String
+  roleCmp  :: (RoleName r0) => r0 -> r -> Ordering
+  roleEq   :: (RoleName r0) => r0 -> r -> Bool
+
+  -- | By default roles are compared by name
+  roleCmp x y = roleName x `compare` roleName y
+  -- | Based on 'roleCmp'
+  roleEq x y = roleCmp x y == EQ
 
 class (RoleName r) => AgentRole r
   where
@@ -53,20 +65,24 @@ class (RoleName r) => AgentRole r
 -----------------------------------------------------------------------------
 
 newtype RoleT r a = RoleT r
-instance (RoleName r) => RoleName (RoleT r a)
-  where roleName (RoleT r) = roleName r
+instance (RoleName r) => RoleName (RoleT r a) where roleName (RoleT r) = roleName r
+
+-- newtype RoleT r a = RoleT (Set r)
+-- instance (RoleName r) => RoleName (RoleT r a)
+--   where roleName (RoleT rs) = intercalate ", " $ roleName <$> Set.toList rs
+--
+-- roleT :: (Ord r) => [r] -> RoleT r a
+-- roleT = RoleT . Set.fromList
 
 -----------------------------------------------------------------------------
 
 
 data SomeRole = forall r . AgentRole r => SomeRole r
-roleName' (SomeRole r) = roleName r
 
-isSameRole r1 r2 = roleName r1 == roleName r2
-
-instance Show SomeRole where show     = roleName'
-instance Eq   SomeRole where (==)     = (==) `on` roleName'
-instance Ord  SomeRole where compare  = compare `on` roleName'
+instance RoleName SomeRole where roleName (SomeRole r) = roleName r
+instance Show     SomeRole where show = roleName
+instance Eq       SomeRole where (==)     = roleEq
+instance Ord      SomeRole where compare  = roleCmp
 
 -----------------------------------------------------------------------------
 
