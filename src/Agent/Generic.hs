@@ -151,7 +151,7 @@ instance Exception ActionThreadException
 
 instance ResponsePromise (GenericAgent s res) Response Respond where
   promiseResponse ag = do respVar <- newEmptyTMVarIO
-                          return ( Response $ takeTMVar respVar
+                          return ( Response . atomically $ takeTMVar respVar
                                  , Respond respVar )
 
 instance ReactiveAgent (GenericAgent s res) where

@@ -50,15 +50,14 @@ type MessageResponse msg resp = (Message msg, Message resp, ExpectedResponse msg
 -----------------------------------------------------------------------------
 
 class ResponseInterface promise where
-  waitResponse'       :: promise resp -> STM (Maybe resp)
   waitResponse        :: promise resp -> IO (Maybe resp)
   waitResponseSuccess :: promise resp -> IO resp
   waitResponses       :: Traversable t => t (promise resp) -> IO (Maybe (t resp))
   handleResponseAsync        :: promise resp -> (Maybe resp -> IO ()) -> IO ()
   handleResponseAsyncSuccess :: promise resp -> (      resp -> IO ()) -> IO ()
 
-  waitResponse  = atomically . waitResponse'
-  waitResponses = fmap sequence . atomically . mapM waitResponse'
+  waitResponses = fmap sequence . mapM waitResponse
+    --  fmap sequence . atomically . sequence <=< mapM waitResponse'
   waitResponseSuccess = maybe noResponseFail return <=< waitResponse
 
   handleResponseAsync resp f = void . forkIO $ waitResponse resp >>= f
@@ -71,12 +70,10 @@ noResponseFail = fail "No response received"
 
 class ResponseProvider provider
   where
-    provideResponse' :: Maybe resp -> provider resp -> STM ()
     provideResponse  :: Maybe resp -> provider resp -> IO ()
     respond          ::       resp -> provider resp -> IO ()
     dontRespond      ::               provider resp -> IO ()
 
-    provideResponse = (atomically .) . provideResponse'
     respond         = provideResponse . Just
     dontRespond     = provideResponse Nothing
 
@@ -89,10 +86,10 @@ class ResponsePromise vower promise provider
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
-newtype Response resp = Response { _responseWait  :: STM (Maybe resp) }
+newtype Response resp = Response { _responseWait  :: IO (Maybe resp) }
 
 instance Functor Response where
-  fmap f (Response wait) = Response (fmap f <$> wait)
+  fmap f (Response wait) = Response $ fmap f <$> wait
 
 instance Applicative Response where
   pure      = Response . return . Just
@@ -104,7 +101,7 @@ instance Monad Response where
   rx >>= f = Response $ do mbResp <- _responseWait rx
                            fmap join . forM mbResp $ _responseWait . f
 
-instance ResponseInterface Response where waitResponse' = _responseWait
+instance ResponseInterface Response where waitResponse = _responseWait
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -112,6 +109,6 @@ instance ResponseInterface Response where waitResponse' = _responseWait
 newtype Respond resp = Respond (TMVar (Maybe resp))
 
 instance ResponseProvider Respond where
-  provideResponse' resp' (Respond var) = putTMVar var resp'
+  provideResponse resp' (Respond var) = atomically $ putTMVar var resp'
 
 -----------------------------------------------------------------------------
