@@ -50,16 +50,23 @@ type MessageResponse msg resp = (Message msg, Message resp, ExpectedResponse msg
 -----------------------------------------------------------------------------
 
 class ResponseInterface promise where
+  -- | predefined response promise
+  respond    ::     Maybe resp    -> promise resp
+  -- | predefined IO response promise
+  respondIO  :: IO (Maybe resp)   -> promise resp
+  -- | forward IO Response
+  forwardIO  :: IO (promise resp) -> promise resp
+
   waitResponse        :: promise resp -> IO (Maybe resp)
   waitResponseSuccess :: promise resp -> IO resp
   waitResponses       :: Traversable t => t (promise resp) -> IO (Maybe (t resp))
   handleResponseAsync        :: promise resp -> (Maybe resp -> IO ()) -> IO ()
   handleResponseAsyncSuccess :: promise resp -> (      resp -> IO ()) -> IO ()
 
+  respond   = respondIO . return
+  forwardIO = respondIO . (waitResponse =<<)
   waitResponses = fmap sequence . mapM waitResponse
-    --  fmap sequence . atomically . sequence <=< mapM waitResponse'
   waitResponseSuccess = maybe noResponseFail return <=< waitResponse
-
   handleResponseAsync resp f = void . forkIO $ waitResponse resp >>= f
   handleResponseAsyncSuccess resp = handleResponseAsync resp
                                   . maybe noResponseFail
@@ -71,11 +78,6 @@ noResponseFail = fail "No response received"
 class ResponseProvider provider
   where
     provideResponse  :: Maybe resp -> provider resp -> IO ()
-    respond          ::       resp -> provider resp -> IO ()
-    dontRespond      ::               provider resp -> IO ()
-
-    respond         = provideResponse . Just
-    dontRespond     = provideResponse Nothing
 
 -----------------------------------------------------------------------------
 
@@ -102,6 +104,8 @@ instance Monad Response where
                            fmap join . forM mbResp $ _responseWait . f
 
 instance ResponseInterface Response where waitResponse = _responseWait
+                                          respondIO    = Response
+
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
