@@ -10,11 +10,11 @@ import Data.IORef
 
 -----------------------------------------------------------------------------
 
-modifyName d i = unsafeModifyGenericRoleDescriptor d
-               $ \d -> d { agName = agName d ++ "-" ++ show i }
+modifyName i = unsafeModifyGenericRoleDescriptor
+             $ \d -> d { agName = agName d ++ "-" ++ show i }
 
-pingRole = modifyName pingRoleDescriptor
-pongRole = modifyName pongRoleDescriptor
+pingRole = flip modifyName pingRoleDescriptor
+pongRole = flip modifyName pongRoleDescriptor
 
 -----------------------------------------------------------------------------
 

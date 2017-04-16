@@ -11,10 +11,13 @@
 
 module Agent(
 
-  Message, Response, ExpectedResponse, MessageResponse
-, handleResponseAsync, handleResponseSuccessAsync
-, waitResponse, waitResponseSuccess
+  Message, ExpectedResponse, MessageResponse
 
+, ResponseInterface(..), Response
+, ResponseProvider(..), Respond
+, ResponsePromise(..)
+
+, AgentId(..)
 , Agent
 , ReactiveAgent(..)
 , AgentControl(..)

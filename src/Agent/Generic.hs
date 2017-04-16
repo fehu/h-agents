@@ -47,7 +47,7 @@ import Control.Concurrent.STM
 --   Has internal state 's'.
 --   Message handling and action run in separate threads.
 data GenericAgent s res = GenericAgent {
-    _name               :: String
+    _name               :: AgentId
   , _debug              :: TVar Bool
   , _state              :: s
   , _execState          :: TVar AgentExecState
@@ -64,7 +64,7 @@ data AgentExecState = AgentRun | AgentPause | AgentTerminate
 data ReceivedMessage  = forall msg . Message msg =>
                                MessageNoResponse msg
                       | forall msg resp . MessageResponse msg resp =>
-                               MessageAwaitsResponse msg (Maybe resp -> IO ())
+                             MessageAwaitsResponse msg (Respond resp)
 
 
 data AgentThread = AgentThread ThreadId (TMVar (Maybe SomeException))
@@ -149,20 +149,25 @@ instance Exception ActionThreadException
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
+instance ResponsePromise (GenericAgent s res) Response Respond where
+  promiseResponse ag = do respVar <- newEmptyTMVarIO
+                          return ( Response $ takeTMVar respVar
+                                 , Respond respVar )
+
 instance ReactiveAgent (GenericAgent s res) where
-  send a = putMessageInBox (_messageBox a)
-  ask a  = putMessageRespInBox (_messageBox a)
+  send = putMessageInBox _messageBox
+  ask  = putMessageRespInBox _messageBox
 
-  sendPriority a = putMessageInBox (_messagePriorityBox a)
-  askPriority a  = putMessageRespInBox (_messagePriorityBox a)
+  sendPriority = putMessageInBox _messagePriorityBox
+  askPriority  = putMessageRespInBox _messagePriorityBox
 
 
-putMessageInBox box msg = atomically $ box `writeTQueue` MessageNoResponse msg
-putMessageRespInBox box msg = do
-  respBox <- newEmptyTMVarIO
-  let  respond = atomically . putTMVar respBox
-  atomically $ box `writeTQueue` MessageAwaitsResponse msg respond
-  return $ Response respBox
+putMessageInBox fbox a msg = atomically $
+                             fbox a `writeTQueue` MessageNoResponse msg
+putMessageRespInBox fbox a msg = do
+    (promise, resp) <- promiseResponse a
+    atomically $ fbox a `writeTQueue` MessageAwaitsResponse msg resp
+    return promise
 
 -----------------------------------------------------------------------------
 
@@ -242,7 +247,7 @@ instance CreateAgent (GenericAgentDescriptor s res) res (GenericAgent s res) whe
                       msgThreadVar <- newTVarIO undefined
                       actThreadVar <- newTVarIO undefined
 
-                      let a = GenericAgent (agName d) debug
+                      let a = GenericAgent (AgentId $ agName d) debug
                                            state exState result
                                            msgBox msgPBox
                                            msgThreadVar actThreadVar
@@ -265,7 +270,7 @@ instance CreateAgent (GenericAgentDescriptor s res) res (GenericAgent s res) whe
 
 
 instance CreateAgentRef (GenericAgentDescriptor s res) res where
-    type CreateAgentType (GenericAgentDescriptor s res) = (GenericAgent s res)
+  type CreateAgentType (GenericAgentDescriptor s res) = GenericAgent s res
 
 -----------------------------------------------------------------------------
 
@@ -286,7 +291,8 @@ processMessages a mh = do
         handleMessage msg = case msg
                               of MessageNoResponse m ->
                                      fromMaybe (return ()) (msgHandle mh a m)
-                                 MessageAwaitsResponse m respond ->
-                                     respond =<< sequence (msgRespond mh a m)
+                                 MessageAwaitsResponse m provider ->
+                                     (`provideResponse` provider) =<<
+                                     sequence (msgRespond mh a m)
 
 -----------------------------------------------------------------------------

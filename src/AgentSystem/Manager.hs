@@ -33,7 +33,7 @@ import Control.Concurrent.STM
 
 class AgentsManager m where
     listAgents :: m -> IO [SomeAgentRef]
-    findAgent  :: m -> String -> IO (Maybe SomeAgentRef)
+    findAgent  :: m -> AgentId -> IO (Maybe SomeAgentRef)
 
     startAllAgents      :: m -> IO ()
     pauseAllAgents      :: m -> IO ()
@@ -54,8 +54,8 @@ class (AgentsManager m) => AgentsCreation m where
 
 newSimpleAgentsManager = SimpleAgentsManager <$> newTVarIO Map.empty
 
-data SimpleAgentsManager = SimpleAgentsManager{
-  _simpleAgentsRegister :: TVar (Map String SomeAgentRef)
+newtype SimpleAgentsManager = SimpleAgentsManager{
+  _simpleAgentsRegister :: TVar (Map AgentId SomeAgentRef)
   }
 
 -----------------------------------------------------------------------------

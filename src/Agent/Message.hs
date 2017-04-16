@@ -11,47 +11,107 @@
 
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Agent.Message(
 
-  Message, Response(..), ExpectedResponse, MessageResponse
-, handleResponseAsync, handleResponseSuccessAsync
-, waitResponse, waitResponseSuccess
+  Message, ExpectedResponse, MessageResponse
+
+, ResponseInterface(..), Response(..)
+, ResponseProvider(..), Respond(..)
+
+, ResponsePromise(..)
 
 ) where
 
-import Data.Typeable (Typeable)
+import Data.Typeable (Typeable, Proxy(..))
 
-import Control.Concurrent (forkIO, killThread)
-import Control.Concurrent.STM (atomically, TMVar, takeTMVar)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.STM ( STM, atomically
+                              , TMVar, takeTMVar, putTMVar, newEmptyTMVarIO
+                              )
 
+import Control.Monad ( (<=<), void, forM, join )
+
+-----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
 type Message msg = (Typeable msg, Show msg)
-newtype Response resp = Response (TMVar (Maybe resp))
-
 type family ExpectedResponse msg :: *
 
 type MessageResponse msg resp = (Message msg, Message resp, ExpectedResponse msg ~ resp)
 
 -----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
 
-handleResponseAsync :: Response resp -> (Maybe resp -> IO ()) -> IO ()
-handleResponseAsync resp f  = do
-  thread <- forkIO $ waitResponse resp >>= f
-  killThread thread
+class ResponseInterface promise where
+  waitResponse'       :: promise resp -> STM (Maybe resp)
+  waitResponse        :: promise resp -> IO (Maybe resp)
+  waitResponseSuccess :: promise resp -> IO resp
+  waitResponses       :: Traversable t => t (promise resp) -> IO (Maybe (t resp))
+  handleResponseAsync        :: promise resp -> (Maybe resp -> IO ()) -> IO ()
+  handleResponseAsyncSuccess :: promise resp -> (      resp -> IO ()) -> IO ()
 
-handleResponseSuccessAsync :: Response resp -> (resp -> IO ()) -> IO ()
-handleResponseSuccessAsync resp f = handleResponseAsync resp f'
-  where f' (Just r) = f r
-        f' _        = fail "No response received"
+  waitResponse  = atomically . waitResponse'
+  waitResponses = fmap sequence . atomically . mapM waitResponse'
+  waitResponseSuccess = maybe noResponseFail return <=< waitResponse
 
-waitResponse :: Response resp -> IO (Maybe resp)
-waitResponse (Response respVar) = atomically $ takeTMVar respVar
+  handleResponseAsync resp f = void . forkIO $ waitResponse resp >>= f
+  handleResponseAsyncSuccess resp = handleResponseAsync resp
+                                  . maybe noResponseFail
 
-waitResponseSuccess :: Response resp -> IO resp
-waitResponseSuccess resp = do r <- waitResponse resp
-                              case r of Just r' -> return r'
-                                        _       -> fail "No response received"
+noResponseFail = fail "No response received"
+
+-----------------------------------------------------------------------------
+
+class ResponseProvider provider
+  where
+    provideResponse' :: Maybe resp -> provider resp -> STM ()
+    provideResponse  :: Maybe resp -> provider resp -> IO ()
+    respond          ::       resp -> provider resp -> IO ()
+    dontRespond      ::               provider resp -> IO ()
+
+    provideResponse = (atomically .) . provideResponse'
+    respond         = provideResponse . Just
+    dontRespond     = provideResponse Nothing
+
+-----------------------------------------------------------------------------
+
+class ResponsePromise vower promise provider
+  where
+    promiseResponse :: vower -> IO (promise resp, provider resp)
+
+-----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
+
+newtype Response resp = Response { _responseWait  :: STM (Maybe resp) }
+
+instance Functor Response where
+  fmap f (Response wait) = Response (fmap f <$> wait)
+
+instance Applicative Response where
+  pure      = Response . return . Just
+  rf <*> rx = Response $ do f' <- _responseWait rf
+                            x' <- _responseWait rx
+                            return $ f' <*> x'
+
+instance Monad Response where
+  rx >>= f = Response $ do mbResp <- _responseWait rx
+                           fmap join . forM mbResp $ _responseWait . f
+
+instance ResponseInterface Response where waitResponse' = _responseWait
+
+-----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
+
+newtype Respond resp = Respond (TMVar (Maybe resp))
+
+instance ResponseProvider Respond where
+  provideResponse' resp' (Respond var) = putTMVar var resp'
 
 -----------------------------------------------------------------------------

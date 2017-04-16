@@ -19,7 +19,7 @@
 
 module Agent.Interface(
 
-  Agent
+  Agent, AgentId(..)
 , ReactiveAgent(..)
 , AgentControl(..)
 , AgentResult(..)
@@ -41,6 +41,8 @@ import Control.Exception (Exception, SomeException)
 
 
 ------------------------------------------------------------------------------
+
+newtype AgentId = AgentId { rawAgentId :: String } deriving (Show, Eq, Ord)
 
 type Agent a res = (ReactiveAgent a, AgentControl a, AgentResult a res)
 
@@ -66,7 +68,7 @@ class AgentControl a
         agentPaused     :: a -> IO Bool
         agentTerminated :: a -> IO Bool
 
-        agentId       :: a -> String
+        agentId       :: a -> AgentId
         agentDebug    :: a -> IO Bool
         agentSetDebug :: a -> Bool -> IO ()
         printDebug    :: a -> String -> IO ()

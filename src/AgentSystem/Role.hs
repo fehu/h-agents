@@ -102,9 +102,10 @@ data CreateAgentOfRole r ag = CreateAgentOfRole (AgentRoleDescriptor r ag)
                                                 (IO (RoleArgs r))
 
 unsafeModifyAgentRoleDescriptor :: (Typeable d, CreateAgent d (RoleResult r) ag) =>
-                                   AgentRoleDescriptor r ag -> (d -> d)
+                                   (d -> d)
                                 -> AgentRoleDescriptor r ag
-unsafeModifyAgentRoleDescriptor (AgentRoleDescriptor r create) f =
+                                -> AgentRoleDescriptor r ag
+unsafeModifyAgentRoleDescriptor f (AgentRoleDescriptor r create) =
   AgentRoleDescriptor r (fmap (f . fromJust . cast) . create)
 
 -----------------------------------------------------------------------------

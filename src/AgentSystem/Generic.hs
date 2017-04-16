@@ -10,6 +10,11 @@
 -----------------------------------------------------------------------------
 
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module AgentSystem.Generic (
 
@@ -28,6 +33,8 @@ import Data.Typeable (Typeable)
 
 import Control.Monad ( (<=<) )
 
+import Data.Function (on)
+
 -----------------------------------------------------------------------------
 
 type GenericAgentOfRole r = GenericAgent (RoleState r) (RoleResult r)
@@ -45,7 +52,8 @@ type GenericAgentOfRoleDescriptor r = GenericAgentDescriptor (RoleState r) (Role
 -----------------------------------------------------------------------------
 
 unsafeModifyGenericRoleDescriptor :: (Typeable (RoleState r), Typeable (RoleResult r)) =>
-                                     GenericRoleDescriptor r
-                                  -> (GenericAgentOfRoleDescriptor r -> GenericAgentOfRoleDescriptor r)
-                                  -> GenericRoleDescriptor r
+     (GenericAgentOfRoleDescriptor r -> GenericAgentOfRoleDescriptor r)
+  -> GenericRoleDescriptor r -> GenericRoleDescriptor r
 unsafeModifyGenericRoleDescriptor = unsafeModifyAgentRoleDescriptor
+
+-----------------------------------------------------------------------------

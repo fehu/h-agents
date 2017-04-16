@@ -40,7 +40,7 @@ pingDescriptor sys nPings =
 
 sendPing c = do let (i', sys, _) = agentState c
                 i   <- readIORef i'
-                Just pong <- sys `findAgent` "Pong"
+                Just pong <- sys `findAgent` AgentId "Pong"
                 if i > 0 then do  putStrLn $ "Ping (" ++ show i ++ ")"
                                   pong `send` Ping
                                   i' `writeIORef` (i-1)
@@ -55,7 +55,7 @@ pongDescriptor sys =
   , initialState = return sys
   , messageHandling = MessageHandling{
         msgHandle  = selectMessageHandler [
-            mbHandle $ \c Ping -> do Just ping <- sys `findAgent` "Ping"
+            mbHandle $ \c Ping -> do Just ping <- sys `findAgent` AgentId "Ping"
                                      putStrLn "Pong"
                                      ping `send` Pong
           ]

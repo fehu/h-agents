@@ -50,9 +50,6 @@ class (Agent a res) =>
       agentResultSuccess :: a -> res -> IO ()
       agentResultFailure :: (Exception ex) => a -> ex -> IO ()
 
--- actStateless :: AgentInnerInterface i s res => IO () -> i -> IO ()
--- actStateless f _ = f
-
 -----------------------------------------------------------------------------
 
 data MessageHandling s res = MessageHandling{
@@ -104,7 +101,7 @@ selectResponse rfs c msg  = foldr (<|>) Nothing
 
 --------------------------------------------------------------------------------
 
-data AgentAction s res = AgentAction {
+newtype AgentAction s res = AgentAction {
     agentAct :: forall i . AgentInnerInterface i s res => i -> IO ()
   }
 

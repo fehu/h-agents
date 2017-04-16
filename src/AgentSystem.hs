@@ -54,16 +54,16 @@ class (AgentsManager sys) => AgentSystem sys where
                     -> IO [AgentRef (RoleResult r)]
   listAgentsOfRoles :: (AgentRole' r) => sys -> [r]
                     -> IO [AgentRef (RoleResult r)]
-  findAgentOfRole   :: (AgentRole' r) => sys -> r -> String
+  findAgentOfRole   :: (AgentRole' r) => sys -> r -> AgentId
                     -> IO (Maybe (AgentRef (RoleResult r)))
 
-  collectResult     :: (AgentRole' r) => sys -> r -> String
+  collectResult     :: (AgentRole' r) => sys -> r -> AgentId
                     -> IO (Maybe (AgentExecutionResult (RoleResult r)))
   collectResults    :: (AgentRole' r) => sys -> r
                     -> IO [(AgentRefOfRole r, Maybe (AgentExecutionResult (RoleResult r)))]
   collectAllResults :: sys -> IO AgentMaybeResultsOfRoles
 
-  awaitResult       :: (AgentRole' r) => sys -> r -> String
+  awaitResult       :: (AgentRole' r) => sys -> r -> AgentId
                     -> IO (AgentExecutionResult (RoleResult r))
   awaitResults      :: (AgentRole' r) => sys -> r
                     -> IO [(AgentRefOfRole r, AgentExecutionResult (RoleResult r))]
@@ -124,7 +124,7 @@ data AgentMaybeResultsOfRole = forall r . AgentRole' r =>
 printResults r l =
   let header  = "Results for role '" ++ roleName r ++ "':"
       results = do (k, res) <- l
-                   ["  <" ++ agentId k ++ "> " ++ show res]
+                   ["  <" ++ rawAgentId (agentId k) ++ "> " ++ show res]
   in unlines $ header : results
 
 instance Show AgentMaybeResultsOfRole where
@@ -163,7 +163,7 @@ newSimpleAgentSystem = SimpleAgentSystem <$> newTVarIO []
 data RoleRegister = forall r . AgentRole' r =>
     RoleRegister r (TVar (AgentsRoleMap r))
 
-type AgentsRoleMap r = Map String (AgentRef (RoleResult r))
+type AgentsRoleMap r = Map AgentId (AgentRef (RoleResult r))
 
 -----------------------------------------------------------------------------
 
