@@ -30,6 +30,7 @@ module Agent.Message(
 ) where
 
 import Data.Typeable (Typeable, Proxy(..))
+import Data.Maybe (fromMaybe)
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM ( STM, atomically
@@ -37,6 +38,7 @@ import Control.Concurrent.STM ( STM, atomically
                               )
 
 import Control.Monad ( (<=<), void, forM, join )
+import Control.Applicative (Alternative(..))
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -50,12 +52,16 @@ type MessageResponse msg resp = (Message msg, Message resp, ExpectedResponse msg
 -----------------------------------------------------------------------------
 
 class ResponseInterface promise where
+  -- -- | predefined response promise
+  -- respond    ::     Maybe resp    -> promise resp
+  -- -- | predefined IO response promise
+  -- respondIO  :: IO (Maybe resp)   -> promise resp
+
   -- | predefined response promise
-  respond    ::     Maybe resp    -> promise resp
+  forward    :: Maybe resp        -> promise resp
   -- | predefined IO response promise
-  respondIO  :: IO (Maybe resp)   -> promise resp
-  -- | forward IO Response
-  forwardIO  :: IO (promise resp) -> promise resp
+  forwardIO  :: IO (Maybe resp)   -> promise resp
+  promiseIO :: IO (promise resp) -> promise resp
 
   waitResponse        :: promise resp -> IO (Maybe resp)
   waitResponseSuccess :: promise resp -> IO resp
@@ -63,8 +69,8 @@ class ResponseInterface promise where
   handleResponseAsync        :: promise resp -> (Maybe resp -> IO ()) -> IO ()
   handleResponseAsyncSuccess :: promise resp -> (      resp -> IO ()) -> IO ()
 
-  respond   = respondIO . return
-  forwardIO = respondIO . (waitResponse =<<)
+  forward = forwardIO . return
+  promiseIO = forwardIO . (waitResponse =<<)
   waitResponses = fmap sequence . mapM waitResponse
   waitResponseSuccess = maybe noResponseFail return <=< waitResponse
   handleResponseAsync resp f = void . forkIO $ waitResponse resp >>= f
@@ -77,13 +83,18 @@ noResponseFail = fail "No response received"
 
 class ResponseProvider provider
   where
-    provideResponse  :: Maybe resp -> provider resp -> IO ()
+    -- doAfterResponse  :: provider resp -> IO () -> provider resp
+    provideResponse :: Response resp -> provider resp -> IO ()
 
 -----------------------------------------------------------------------------
 
-class ResponsePromise vower promise provider
+-- class ResponsePromise vower promise provider
+--   where
+--     promiseResponse :: vower -> IO (promise resp, provider resp)
+
+class ResponsePromise promise provider
   where
-    promiseResponse :: vower -> IO (promise resp, provider resp)
+    promiseResponse :: IO (promise resp, provider resp)
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -104,15 +115,28 @@ instance Monad Response where
                            fmap join . forM mbResp $ _responseWait . f
 
 instance ResponseInterface Response where waitResponse = _responseWait
-                                          respondIO    = Response
+                                          forwardIO    = Response
 
+instance Alternative Response where
+  empty = forward Nothing
+  Response x <|> Response y = Response $ (<|>) <$> x <*> y
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
 newtype Respond resp = Respond (TMVar (Maybe resp))
+instance Show (Respond resp) where show _ = "Respond(?var?)"
 
 instance ResponseProvider Respond where
-  provideResponse resp' (Respond var) = atomically $ putTMVar var resp'
+  provideResponse resp' (Respond var) =
+    atomically . putTMVar var =<< waitResponse resp'
+
+-----------------------------------------------------------------------------
+
+instance ResponsePromise Response Respond where
+  promiseResponse = do respVar <- newEmptyTMVarIO
+                       return ( Response . atomically $ takeTMVar respVar
+                              , Respond respVar)
+
 
 -----------------------------------------------------------------------------

@@ -30,11 +30,12 @@ module Agent.Generic(
 import Agent            as Export
 import Agent.Behavior   as Export
 import Agent.Message
+import Agent.MsgResponse
 
 import Data.Maybe (isNothing, fromMaybe)
 import Data.Typeable (Typeable, cast)
 
-import Control.Applicative ( (<|>) )
+import Control.Applicative ( (<|>), empty )
 import Control.Monad (when, unless, forever)
 import Control.Exception (Exception, SomeException(..), throwIO)
 import Control.Concurrent (ThreadId, forkFinally)
@@ -149,11 +150,6 @@ instance Exception ActionThreadException
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
-instance ResponsePromise (GenericAgent s res) Response Respond where
-  promiseResponse ag = do respVar <- newEmptyTMVarIO
-                          return ( Response . atomically $ takeTMVar respVar
-                                 , Respond respVar )
-
 instance ReactiveAgent (GenericAgent s res) where
   send = putMessageInBox _messageBox
   ask  = putMessageRespInBox _messageBox
@@ -165,7 +161,7 @@ instance ReactiveAgent (GenericAgent s res) where
 putMessageInBox fbox a msg = atomically $
                              fbox a `writeTQueue` MessageNoResponse msg
 putMessageRespInBox fbox a msg = do
-    (promise, resp) <- promiseResponse a
+    (promise, resp) <- promiseResponse
     atomically $ fbox a `writeTQueue` MessageAwaitsResponse msg resp
     return promise
 
@@ -292,7 +288,10 @@ processMessages a mh = do
                               of MessageNoResponse m ->
                                      fromMaybe (return ()) (msgHandle mh a m)
                                  MessageAwaitsResponse m provider ->
-                                     (`provideResponse` provider) =<<
-                                     sequence (msgRespond mh a m)
+                                     do (resp, after) <- _msgResponse =<<
+                                                         fromMaybe empty
+                                                         (msgRespond mh a m)
+                                        provideResponse resp provider
+                                        after
 
 -----------------------------------------------------------------------------

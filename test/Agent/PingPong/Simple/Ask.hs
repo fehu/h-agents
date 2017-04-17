@@ -47,7 +47,7 @@ pongDescriptor =
     , messageHandling = MessageHandling{
           msgHandle  = selectMessageHandler []
         , msgRespond = selectResponse [
-              mbResp $ \_ Ping -> putStrLn "Pong" >> return Pong
+              mbResp $ \_ Ping -> putStrLn "Pong" >> respond Pong
             ]
         }
     , action = agentNoAction

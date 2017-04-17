@@ -25,6 +25,11 @@ module Agent.Behavior(
 , mbHandle, selectMessageHandler
 , mbResp, selectResponse
 
+, MsgResponse, respond
+, ExpectingResponse, respondExpectingResponse, respondAwaitingResponse
+, ConfirmMessage, AwaitingConfirmation, respondConfirm, respondCancel
+, respondAwaitingConfirmation
+
 -- * Action
 
 , AgentAction(..), agentNoAction, runAgentAction
@@ -33,8 +38,10 @@ module Agent.Behavior(
 
 import Agent.Message
 import Agent.Interface
+import Agent.MsgResponse
 
 import Data.Typeable (cast)
+import Data.Foldable (asum)
 
 import Control.Exception (Exception)
 import Control.Applicative ( (<|>) )
@@ -57,7 +64,7 @@ data MessageHandling s res = MessageHandling{
                     c -> msg -> Maybe (IO ())
   , msgRespond  :: forall c msg resp . ( AgentInnerInterface c s res
                                        , MessageResponse msg resp) =>
-                    c -> msg -> Maybe (IO resp)
+                    c -> msg -> Maybe (IO (MsgResponse resp))
   }
 
 handlesNoMessages = MessageHandling (selectMessageHandler [])
@@ -88,16 +95,15 @@ selectMessageHandler rfs c msg  = foldr (<|>) Nothing
 
 mbResp  :: ( AgentInnerInterface c s res
            , MessageResponse msg0 resp0, MessageResponse msg resp )
-        => (c -> msg  ->        IO resp)
-        ->  c -> msg0 -> Maybe (IO resp0)
+        => (c -> msg  ->        IO (MsgResponse resp))
+        ->  c -> msg0 -> Maybe (IO (MsgResponse resp0))
 mbResp f c msg = do msg' <- cast msg
                     cast $ f c msg'
 
 selectResponse  :: (AgentInnerInterface c s res, MessageResponse msg resp)
-                => [c -> msg -> Maybe (IO resp)]
-                ->  c -> msg -> Maybe (IO resp)
-selectResponse rfs c msg  = foldr (<|>) Nothing
-                        $ (\f -> f c msg) <$> rfs
+                => [c -> msg -> Maybe (IO (MsgResponse resp))]
+                ->  c -> msg -> Maybe (IO (MsgResponse resp))
+selectResponse rfs c msg  = asum $ (\f -> f c msg) <$> rfs
 
 --------------------------------------------------------------------------------
 
