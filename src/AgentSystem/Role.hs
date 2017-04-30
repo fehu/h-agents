@@ -18,7 +18,7 @@
 
 module AgentSystem.Role(
 
-  AgentRole(..), RoleName(..), RoleT(..) -- , roleT
+  AgentRole(..), RoleName(..) -- , RoleT(..) -- , roleT
 , SomeRole(..)
 
 , AgentOfRole, AgentRefOfRole
@@ -64,8 +64,8 @@ class (RoleName r) => AgentRole r
 
 -----------------------------------------------------------------------------
 
-newtype RoleT r a = RoleT r
-instance (RoleName r) => RoleName (RoleT r a) where roleName (RoleT r) = roleName r
+-- newtype RoleT r a = RoleT r
+-- instance (RoleName r) => RoleName (RoleT r a) where roleName (RoleT r) = roleName r
 
 -- newtype RoleT r a = RoleT (Set r)
 -- instance (RoleName r) => RoleName (RoleT r a)
