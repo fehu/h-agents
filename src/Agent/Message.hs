@@ -52,26 +52,19 @@ type MessageResponse msg resp = (Message msg, Message resp, ExpectedResponse msg
 -----------------------------------------------------------------------------
 
 class ResponseInterface promise where
-  -- -- | predefined response promise
-  -- respond    ::     Maybe resp    -> promise resp
-  -- -- | predefined IO response promise
-  -- respondIO  :: IO (Maybe resp)   -> promise resp
-
   -- | predefined response promise
   forward    :: Maybe resp        -> promise resp
   -- | predefined IO response promise
   forwardIO  :: IO (Maybe resp)   -> promise resp
-  promiseIO :: IO (promise resp) -> promise resp
+  promiseIO  :: IO (promise resp) -> promise resp
 
   waitResponse        :: promise resp -> IO (Maybe resp)
   waitResponseSuccess :: promise resp -> IO resp
-  waitResponses       :: Traversable t => t (promise resp) -> IO (Maybe (t resp))
   handleResponseAsync        :: promise resp -> (Maybe resp -> IO ()) -> IO ()
   handleResponseAsyncSuccess :: promise resp -> (      resp -> IO ()) -> IO ()
 
   forward = forwardIO . return
   promiseIO = forwardIO . (waitResponse =<<)
-  waitResponses = fmap sequence . mapM waitResponse
   waitResponseSuccess = maybe noResponseFail return <=< waitResponse
   handleResponseAsync resp f = void . forkIO $ waitResponse resp >>= f
   handleResponseAsyncSuccess resp = handleResponseAsync resp
@@ -83,14 +76,9 @@ noResponseFail = fail "No response received"
 
 class ResponseProvider provider
   where
-    -- doAfterResponse  :: provider resp -> IO () -> provider resp
     provideResponse :: Response resp -> provider resp -> IO ()
 
 -----------------------------------------------------------------------------
-
--- class ResponsePromise vower promise provider
---   where
---     promiseResponse :: vower -> IO (promise resp, provider resp)
 
 class ResponsePromise promise provider
   where
