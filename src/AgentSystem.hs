@@ -12,11 +12,16 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 
 module AgentSystem(
 
   AgentSystem(..)
+, SystemAgentsCreation(..), AgentSystemRoleArgs(..)
+
 , AgentRole', AgentsOfRoles
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
 , SomeAgentSystem(..)
@@ -69,12 +74,6 @@ class (AgentsManager sys) => AgentSystem sys where
                     -> IO [(AgentRefOfRole r, AgentExecutionResult (RoleResult r))]
   awaitAllResults   :: sys -> IO AgentResultsOfRoles
 
-  newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r ) =>
-                    sys
-                 -> AgentRoleDescriptor r ag
-                 -> IO (RoleArgs r)
-                 -> IO (AgentRef (RoleResult r))
-
   listAgentsOfRole sys = listAgentsOfRoles sys . (: [])
 
   collectResult s r = maybe (return Nothing) agentResult <=< findAgentOfRole s r
@@ -98,6 +97,22 @@ mapM' f m = Map.fromList <$> mapM (\(k,v) -> (,) k <$> f v ) (Map.assocs m)
 
 notFound r i = "Agent of role '" ++ show (roleName r) ++
                "' with id <" ++ show i ++ "> couldn't be found."
+
+-----------------------------------------------------------------------------
+
+class AgentSystemRoleArgs sys r sysArgs | r -> sysArgs where
+  agentOfRoleSysArgs :: sys -> r -> IO sysArgs
+
+instance AgentSystemRoleArgs sys r () where
+  agentOfRoleSysArgs _ _ = return ()
+
+class SystemAgentsCreation sys where
+  newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r
+                                  , AgentSystemRoleArgs sys r (RoleSysArgs r)) =>
+                    sys
+                 -> AgentRoleDescriptor r ag
+                 -> IO (RoleArgs r)
+                 -> IO (AgentRef (RoleResult r))
 
 -----------------------------------------------------------------------------
 
@@ -147,7 +162,6 @@ instance AgentSystem SomeAgentSystem where
   listAgentsByRole  (SomeAgentSystem sys) = listAgentsByRole  sys
   listAgentsOfRoles (SomeAgentSystem sys) = listAgentsOfRoles sys
   findAgentOfRole   (SomeAgentSystem sys) = findAgentOfRole   sys
-  newAgentOfRole    (SomeAgentSystem sys) = newAgentOfRole    sys
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -219,16 +233,19 @@ instance AgentSystem SimpleAgentSystem where
              let new = AgentsOfRole r $ Map.elems rMap
              mkAgentsOfRole ((SomeRole r, new):acc) regs
 
-  listAgentsOfRoles s rs = undefined
-    -- maybe [] Map.elems <$> lookupAgentsOfRole' s r
+  -- listAgentsOfRoles s rs =
+  --   maybe [] Map.elems <$> lookupAgentsOfRole' s r
 
   findAgentOfRole sys r aId = do
     reg <- searchAgentsOfRole' sys r
     return $ Map.lookup aId reg
 
+
+
+instance SystemAgentsCreation SimpleAgentSystem where
   newAgentOfRole s d argsIO = do
-    ref <- createAgentRef $ CreateAgentOfRole d argsIO
     (AgentRoleDescriptor r _) <- return d
+    ref <- createAgentRef $ CreateAgentOfRole d (agentOfRoleSysArgs s r) argsIO
     let newRegister =
           do newMap <- newTVar $ Map.singleton (agentId ref) ref
              _agentsRegisters s `modifyTVar` (RoleRegister r newMap :)

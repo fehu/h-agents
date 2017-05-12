@@ -42,7 +42,7 @@ import Data.Typeable (Typeable, cast)
 
 -- import qualified Data.Set as Set
 
-import Control.Monad ( (<=<) )
+import Control.Monad ( (<=<), join )
 
 -----------------------------------------------------------------------------
 
@@ -61,6 +61,7 @@ class (RoleName r) => AgentRole r
     type RoleState  r :: *
     type RoleResult r :: *
     type RoleArgs   r :: *
+    type RoleSysArgs r :: *
 
 -----------------------------------------------------------------------------
 
@@ -91,30 +92,37 @@ type AgentRefOfRole r = AgentRef (RoleResult r)
 
 -----------------------------------------------------------------------------
 
--- data AgentRoleDescriptor r ag = forall from . ( CreateAgent from (RoleResult r) ag ) =>
---   AgentRoleDescriptor r (RoleArgs r -> IO from)
-
 data AgentRoleDescriptor r ag = forall from . ( CreateAgent from (RoleResult r) ag
                                               , Typeable from) =>
-  AgentRoleDescriptor r (RoleArgs r -> IO from)
+  AgentRoleDescriptor r (RoleSysArgs r -> RoleArgs r -> IO from)
 
 data CreateAgentOfRole r ag = CreateAgentOfRole (AgentRoleDescriptor r ag)
+                                                (IO (RoleSysArgs r))
                                                 (IO (RoleArgs r))
+
+
+modifyAgentRoleDescriptor :: (RoleSysArgs r -> RoleSysArgs r)
+                          -> (RoleArgs r    -> RoleArgs r)
+                          -> AgentRoleDescriptor r ag
+                          -> AgentRoleDescriptor r ag
+modifyAgentRoleDescriptor f g (AgentRoleDescriptor r create) =
+  AgentRoleDescriptor r (\sa a -> create (f sa) (g a))
+
 
 unsafeModifyAgentRoleDescriptor :: (Typeable d, CreateAgent d (RoleResult r) ag) =>
                                    (d -> d)
                                 -> AgentRoleDescriptor r ag
                                 -> AgentRoleDescriptor r ag
 unsafeModifyAgentRoleDescriptor f (AgentRoleDescriptor r create) =
-  AgentRoleDescriptor r (fmap (f . fromJust . cast) . create)
+  AgentRoleDescriptor r $ ((fmap f . fromJust . cast) .) . create
 
 -----------------------------------------------------------------------------
 
 instance ( RoleResult r ~ res ) =>
   CreateAgent (CreateAgentOfRole r ag) res ag
     where
-      createAgent (CreateAgentOfRole (AgentRoleDescriptor _ create) args) =
-        createAgent =<< create =<< args
+      createAgent (CreateAgentOfRole (AgentRoleDescriptor _ create) sArgs args) =
+        createAgent =<< join (create <$> sArgs <*> args)
 
 instance ( Agent ag res, RoleResult r ~ res ) =>
   CreateAgentRef (CreateAgentOfRole r ag) res where
