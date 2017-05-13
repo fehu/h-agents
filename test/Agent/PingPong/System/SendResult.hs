@@ -19,7 +19,7 @@ pongRole = flip modifyName pongRoleDescriptor
 -----------------------------------------------------------------------------
 
 runPingPong nPings = do putStrLn "<< Create System >> "
-                        sys  <- newSimpleAgentSystem
+                        sys  <- newSimpleAgentSystem (return ())
                         let newPingPongPair i = do
                                   pingRef <- newIORef undefined
                                   pongRef <- newIORef undefined
