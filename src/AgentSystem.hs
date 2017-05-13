@@ -22,7 +22,7 @@
 module AgentSystem(
 
   AgentSystem(..)
-, SystemAgentsCreation(..)
+, SystemAgentsCreation(..), SystemArgsProvider(..)
 
 , AgentRole', AgentsOfRoles
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
@@ -102,16 +102,21 @@ notFound r i = "Agent of role '" ++ show (roleName r) ++
 
 -----------------------------------------------------------------------------
 
-
-class (AgentSystem sys) => SystemAgentsCreation sys sysArgs where
+class (AgentSystem sys) => SystemArgsProvider sys sysArgs where
   agentSysArgs   :: sys -> IO sysArgs
-  newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r
-                                  , RoleSysArgs r ~ sysArgs
-                                  ) =>
-                    sys
-                 -> AgentRoleDescriptor r ag
-                 -> IO (RoleArgs r)
-                 -> IO (AgentRef (RoleResult r))
+
+class (SystemArgsProvider sys sysArgs) =>
+  SystemAgentsCreation sys sysArgs where
+    newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r
+                                    , RoleSysArgs r ~ sysArgs
+                                    ) =>
+                      sys
+                   -> AgentRoleDescriptor r ag
+                   -> IO (RoleArgs r)
+                   -> IO (AgentRef (RoleResult r))
+
+instance (AgentSystem sys) =>
+  SystemArgsProvider sys () where agentSysArgs = const $ return ()
 
 -----------------------------------------------------------------------------
 
@@ -177,8 +182,10 @@ instance AgentSystem (KnownAgentSystem args) where
   listAgentsOfRoles (KnownAgentSystem sys) = listAgentsOfRoles sys
   findAgentOfRole   (KnownAgentSystem sys) = findAgentOfRole   sys
 
-instance SystemAgentsCreation (KnownAgentSystem args) args where
+instance SystemArgsProvider (KnownAgentSystem args) args where
   agentSysArgs   (KnownAgentSystem sys) = agentSysArgs sys
+
+instance SystemAgentsCreation (KnownAgentSystem args) args where
   newAgentOfRole (KnownAgentSystem sys) = newAgentOfRole sys
 
 -----------------------------------------------------------------------------
@@ -260,9 +267,11 @@ instance AgentSystem (SimpleAgentSystem sArgs) where
     return $ Map.lookup aId reg
 
 
+instance SystemArgsProvider (SimpleAgentSystem sArgs) sArgs where
+  agentSysArgs = _agentSysArgs
 
 instance SystemAgentsCreation (SimpleAgentSystem sArgs) sArgs where
-  agentSysArgs = _agentSysArgs
+
   newAgentOfRole s d argsIO = do
     ref <- createAgentRef $ CreateAgentOfRole d (agentSysArgs s) argsIO
     (AgentRoleDescriptor r _) <- return d
