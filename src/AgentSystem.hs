@@ -220,7 +220,7 @@ instance AgentSystem SimpleAgentSystem where
     return $ Map.lookup aId reg
 
   newAgentOfRole s d argsIO = do
-    ref <- createAgentRef $ CreateAgentOfRole d argsIO
+    ref <- createAgentRef $ CreateAgentOfRole d (agentSysArgs s) argsIO
     (AgentRoleDescriptor r _) <- return d
     let newRegister =
           do newMap <- newTVar $ Map.singleton (agentId ref) ref

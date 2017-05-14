@@ -44,7 +44,8 @@ type GenericRoleDescriptor r = AgentRoleDescriptor r (GenericAgentOfRole r)
 genericRoleDescriptor :: ( CreateAgent from (RoleResult r) (GenericAgentOfRole r)
                          , Typeable from
                          ) =>
-                         r -> (RoleArgs r -> IO from) -> GenericRoleDescriptor r
+                         r -> (RoleSysArgs r -> RoleArgs r -> IO from)
+                           -> GenericRoleDescriptor r
 genericRoleDescriptor = AgentRoleDescriptor
 
 type GenericAgentOfRoleDescriptor r = GenericAgentDescriptor (RoleState r) (RoleResult r)

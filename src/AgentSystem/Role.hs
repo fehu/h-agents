@@ -42,7 +42,7 @@ import Data.Typeable (Typeable, cast)
 
 -- import qualified Data.Set as Set
 
-import Control.Monad ( (<=<) )
+import Control.Monad ( (<=<), join )
 
 -----------------------------------------------------------------------------
 
@@ -97,9 +97,10 @@ type AgentRefOfRole r = AgentRef (RoleResult r)
 
 data AgentRoleDescriptor r ag = forall from . ( CreateAgent from (RoleResult r) ag
                                               , Typeable from) =>
-  AgentRoleDescriptor r (RoleArgs r -> IO from)
+  AgentRoleDescriptor r (RoleSysArgs r -> RoleArgs r -> IO from)
 
 data CreateAgentOfRole r ag = CreateAgentOfRole (AgentRoleDescriptor r ag)
+                                                (IO (RoleSysArgs r))
                                                 (IO (RoleArgs r))
 
 unsafeModifyAgentRoleDescriptor :: (Typeable d, CreateAgent d (RoleResult r) ag) =>
@@ -107,15 +108,15 @@ unsafeModifyAgentRoleDescriptor :: (Typeable d, CreateAgent d (RoleResult r) ag)
                                 -> AgentRoleDescriptor r ag
                                 -> AgentRoleDescriptor r ag
 unsafeModifyAgentRoleDescriptor f (AgentRoleDescriptor r create) =
-  AgentRoleDescriptor r (fmap (f . fromJust . cast) . create)
+  AgentRoleDescriptor r ((fmap (f . fromJust . cast) .) . create)
 
 -----------------------------------------------------------------------------
 
 instance ( RoleResult r ~ res ) =>
   CreateAgent (CreateAgentOfRole r ag) res ag
     where
-      createAgent (CreateAgentOfRole (AgentRoleDescriptor _ create) args) =
-        createAgent =<< create =<< args
+      createAgent (CreateAgentOfRole (AgentRoleDescriptor _ create) sArgs args) =
+        createAgent =<< join (create <$> sArgs <*> args)
 
 instance ( Agent ag res, RoleResult r ~ res ) =>
   CreateAgentRef (CreateAgentOfRole r ag) res where

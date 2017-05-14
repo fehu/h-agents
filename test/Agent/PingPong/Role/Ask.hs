@@ -32,10 +32,10 @@ instance AgentRole PongRole where
 --------------------------------------------------------------------------------
 
 pingRoleDescriptor = genericRoleDescriptor PingRole
-                    (return . uncurry Ask.pingDescriptor)
+                    (const $ return . uncurry Ask.pingDescriptor)
 
 pongRoleDescriptor = genericRoleDescriptor PongRole
-                    (const $ return Ask.pongDescriptor)
+                    (const . const $ return Ask.pongDescriptor)
 
 --------------------------------------------------------------------------------
 
@@ -43,9 +43,9 @@ runPingPong nPings = do pongRef <- newIORef undefined
 
                         putStrLn "<< CreateAgentOfRole >> "
                         let pingC = CreateAgentOfRole pingRoleDescriptor
-                                  $ return (nPings, pongRef)
+                                  (return ()) (return (nPings, pongRef))
                             pongC = CreateAgentOfRole pongRoleDescriptor
-                                  $ return ()
+                                  (return ()) (return ())
 
                         ping <- createAgentRef pingC
                         pong <- createAgentRef pongC
