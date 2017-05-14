@@ -28,7 +28,7 @@ module AgentSystem(
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
 , SomeAgentSystem(..), KnownAgentSystem(..)
 
-, SimpleAgentSystem, newSimpleAgentSystem
+, SimpleAgentSystem, newSimpleAgentSystem, changeSimpleAgentSystemArgs
 
 , module Export
 
@@ -203,6 +203,11 @@ newSimpleAgentSystem sysArgs = flip SimpleAgentSystem sysArgs <$> newTVarIO []
 
 instance Functor SimpleAgentSystem where
   fmap f (SimpleAgentSystem reg args) = SimpleAgentSystem reg $ f <$> args
+
+changeSimpleAgentSystemArgs :: (sysArgs0 -> IO sysArgs) -> SimpleAgentSystem sysArgs0
+                                                        -> SimpleAgentSystem sysArgs
+changeSimpleAgentSystemArgs f (SimpleAgentSystem reg args) =
+    SimpleAgentSystem reg $ f =<< args
 
 -----------------------------------------------------------------------------
 
