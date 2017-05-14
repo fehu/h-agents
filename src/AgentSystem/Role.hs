@@ -60,6 +60,7 @@ class (RoleName r) => AgentRole r
   where
     type RoleState  r :: *
     type RoleResult r :: *
+    type RoleSysArgs r :: *
     type RoleArgs   r :: *
 
 -----------------------------------------------------------------------------

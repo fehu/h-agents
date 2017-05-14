@@ -12,14 +12,15 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 
 module AgentSystem(
 
-  AgentSystem(..)
+  AgentSystem(..), AgentSystemArgsProvider(..)
 , AgentRole', AgentsOfRoles
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
-, SomeAgentSystem(..)
 
 , SimpleAgentSystem, newSimpleAgentSystem
 
@@ -69,7 +70,8 @@ class (AgentsManager sys) => AgentSystem sys where
                     -> IO [(AgentRefOfRole r, AgentExecutionResult (RoleResult r))]
   awaitAllResults   :: sys -> IO AgentResultsOfRoles
 
-  newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r ) =>
+  newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r
+                                  , AgentSystemArgsProvider sys (RoleSysArgs r)) =>
                     sys
                  -> AgentRoleDescriptor r ag
                  -> IO (RoleArgs r)
@@ -98,6 +100,13 @@ mapM' f m = Map.fromList <$> mapM (\(k,v) -> (,) k <$> f v ) (Map.assocs m)
 
 notFound r i = "Agent of role '" ++ show (roleName r) ++
                "' with id <" ++ show i ++ "> couldn't be found."
+
+-----------------------------------------------------------------------------
+
+class AgentSystemArgsProvider sys sargs where
+  agentSysArgs :: sys -> IO sargs
+
+instance AgentSystemArgsProvider sys () where agentSysArgs = const $ return ()
 
 -----------------------------------------------------------------------------
 
@@ -132,22 +141,6 @@ instance Show AgentMaybeResultsOfRole where
 
 instance Show AgentResultsOfRole where
   show (AgentResultsOfRole r l) = printResults r l
-
------------------------------------------------------------------------------
-
-data SomeAgentSystem = forall sys . AgentSystem sys =>
-     SomeAgentSystem sys
-
-instance AgentsManager SomeAgentSystem where
-  listAgents (SomeAgentSystem sys) = listAgents sys
-  findAgent  (SomeAgentSystem sys) = findAgent sys
-
-
-instance AgentSystem SomeAgentSystem where
-  listAgentsByRole  (SomeAgentSystem sys) = listAgentsByRole  sys
-  listAgentsOfRoles (SomeAgentSystem sys) = listAgentsOfRoles sys
-  findAgentOfRole   (SomeAgentSystem sys) = findAgentOfRole   sys
-  newAgentOfRole    (SomeAgentSystem sys) = newAgentOfRole    sys
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
