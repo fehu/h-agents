@@ -12,7 +12,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DataKinds #-}
@@ -22,11 +22,11 @@
 module AgentSystem(
 
   AgentSystem(..)
-, SystemAgentsCreation(..), SystemArgsProvider(..)
+, SystemAgentsCreation(..), SystemRoleArgsProvider(..)
 
 , AgentRole', AgentsOfRoles
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
-, SomeAgentSystem(..), KnownAgentSystem(..)
+, SomeAgentSystem(..), AgentSystemSupportsRole(..)
 
 , SimpleAgentSystem, newSimpleAgentSystem, changeSimpleAgentSystemArgs
 
@@ -102,13 +102,13 @@ notFound r i = "Agent of role '" ++ show (roleName r) ++
 
 -----------------------------------------------------------------------------
 
-class (AgentSystem sys) => SystemArgsProvider sys sysArgs where
-  agentSysArgs :: sys -> IO sysArgs
+class (AgentSystem sys) => SystemRoleArgsProvider sys r sysArgs | r -> sysArgs where
+  agentSysRoleArgs :: sys -> r -> IO sysArgs
 
 class SystemAgentsCreation sys where
     newAgentOfRole :: forall r ag sysArgs . ( AgentRole' r, AgentOfRole ag r
                                             , RoleSysArgs r ~ sysArgs
-                                            , SystemArgsProvider sys sysArgs
+                                            , SystemRoleArgsProvider sys r sysArgs
                                             ) =>
                       sys
                    -> AgentRoleDescriptor r ag
@@ -118,7 +118,7 @@ class SystemAgentsCreation sys where
 -----------------------------------------------------------------------------
 
 -- instance (AgentSystem sys) =>
---   SystemArgsProvider sys () where agentSysArgs = const $ return ()
+--   SystemRoleArgsProvider sys () where agentSysRoleArgs = const $ return ()
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -173,32 +173,34 @@ instance AgentSystem SomeAgentSystem where
 
 -----------------------------------------------------------------------------
 
-data KnownAgentSystem sysArgs = forall sys . ( SystemAgentsCreation sys
-                                             , SystemArgsProvider sys sysArgs
-                                              ) =>
+data AgentSystemSupportsRole r = forall sys sysArgs . ( SystemAgentsCreation sys
+                                                      , SystemRoleArgsProvider sys r sysArgs
+                                                      , RoleSysArgs r ~ sysArgs
+                                                       ) =>
      KnownAgentSystem sys
 
-instance AgentsManager (KnownAgentSystem args) where
+instance AgentsManager (AgentSystemSupportsRole r) where
   listAgents (KnownAgentSystem sys) = listAgents sys
   findAgent  (KnownAgentSystem sys) = findAgent sys
 
-instance AgentSystem (KnownAgentSystem args) where
+instance AgentSystem (AgentSystemSupportsRole r) where
   listAgentsByRole  (KnownAgentSystem sys) = listAgentsByRole  sys
   listAgentsOfRoles (KnownAgentSystem sys) = listAgentsOfRoles sys
   findAgentOfRole   (KnownAgentSystem sys) = findAgentOfRole   sys
 
-instance SystemArgsProvider (KnownAgentSystem args) args where
-  agentSysArgs   (KnownAgentSystem sys) = agentSysArgs sys
+instance (RoleSysArgs r ~ rsa) =>
+  SystemRoleArgsProvider (AgentSystemSupportsRole r) r rsa where
+    agentSysRoleArgs   (KnownAgentSystem sys) = agentSysRoleArgs sys
 
--- instance SystemAgentsCreation (KnownAgentSystem args) where
+-- instance SystemAgentsCreation (AgentSystemSupportsRole r) where
 --   newAgentOfRole (KnownAgentSystem sys) = newAgentOfRole sys
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
 data SimpleAgentSystem sysArgs = SimpleAgentSystem{
-    _agentsRegisters :: TVar [RoleRegister]
-  , _agentSysArgs    :: IO sysArgs
+    _agentsRegisters  :: TVar [RoleRegister]
+  , _agentSysRoleArgs :: IO sysArgs
   }
 
 newSimpleAgentSystem sysArgs = flip SimpleAgentSystem sysArgs <$> newTVarIO []
@@ -280,14 +282,15 @@ instance AgentSystem (SimpleAgentSystem sArgs) where
     return $ Map.lookup aId reg
 
 
-instance SystemArgsProvider (SimpleAgentSystem sArgs) sArgs where
-  agentSysArgs = _agentSysArgs
+instance (RoleSysArgs r ~ rsa) =>
+  SystemRoleArgsProvider (SimpleAgentSystem rsa) r rsa where
+    agentSysRoleArgs sys _ = _agentSysRoleArgs sys
 
 instance SystemAgentsCreation (SimpleAgentSystem sArgs) where
 
   newAgentOfRole s d argsIO = do
-    ref <- createAgentRef $ CreateAgentOfRole d (agentSysArgs s) argsIO
     (AgentRoleDescriptor r _) <- return d
+    ref <- createAgentRef $ CreateAgentOfRole d (agentSysRoleArgs s r) argsIO
     let newRegister =
           do newMap <- newTVar $ Map.singleton (agentId ref) ref
              _agentsRegisters s `modifyTVar` (RoleRegister r newMap :)
