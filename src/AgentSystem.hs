@@ -103,7 +103,7 @@ notFound r i = "Agent of role '" ++ show (roleName r) ++
 -----------------------------------------------------------------------------
 
 class (AgentSystem sys) => SystemArgsProvider sys sysArgs where
-  agentSysArgs   :: sys -> IO sysArgs
+  agentSysArgs :: sys -> IO sysArgs
 
 class (SystemArgsProvider sys sysArgs) =>
   SystemAgentsCreation sys sysArgs where
@@ -115,9 +115,12 @@ class (SystemArgsProvider sys sysArgs) =>
                    -> IO (RoleArgs r)
                    -> IO (AgentRef (RoleResult r))
 
+-----------------------------------------------------------------------------
+
 instance (AgentSystem sys) =>
   SystemArgsProvider sys () where agentSysArgs = const $ return ()
 
+-----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
 
 type AgentsOfRoles = Map SomeRole AgentsOfRole
@@ -197,6 +200,9 @@ data SimpleAgentSystem sysArgs = SimpleAgentSystem{
   }
 
 newSimpleAgentSystem sysArgs = flip SimpleAgentSystem sysArgs <$> newTVarIO []
+
+instance Functor SimpleAgentSystem where
+  fmap f (SimpleAgentSystem reg args) = SimpleAgentSystem reg $ f <$> args
 
 -----------------------------------------------------------------------------
 
