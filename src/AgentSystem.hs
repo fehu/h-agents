@@ -105,11 +105,11 @@ notFound r i = "Agent of role '" ++ show (roleName r) ++
 class (AgentSystem sys) => SystemArgsProvider sys sysArgs where
   agentSysArgs :: sys -> IO sysArgs
 
-class (SystemArgsProvider sys sysArgs) =>
-  SystemAgentsCreation sys sysArgs where
-    newAgentOfRole :: forall r ag . ( AgentRole' r, AgentOfRole ag r
-                                    , RoleSysArgs r ~ sysArgs
-                                    ) =>
+class SystemAgentsCreation sys where
+    newAgentOfRole :: forall r ag sysArgs . ( AgentRole' r, AgentOfRole ag r
+                                            , RoleSysArgs r ~ sysArgs
+                                            , SystemArgsProvider sys sysArgs
+                                            ) =>
                       sys
                    -> AgentRoleDescriptor r ag
                    -> IO (RoleArgs r)
@@ -117,8 +117,8 @@ class (SystemArgsProvider sys sysArgs) =>
 
 -----------------------------------------------------------------------------
 
-instance (AgentSystem sys) =>
-  SystemArgsProvider sys () where agentSysArgs = const $ return ()
+-- instance (AgentSystem sys) =>
+--   SystemArgsProvider sys () where agentSysArgs = const $ return ()
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -173,7 +173,9 @@ instance AgentSystem SomeAgentSystem where
 
 -----------------------------------------------------------------------------
 
-data KnownAgentSystem sysArgs = forall sys . SystemAgentsCreation sys sysArgs =>
+data KnownAgentSystem sysArgs = forall sys . ( SystemAgentsCreation sys
+                                             , SystemArgsProvider sys sysArgs
+                                              ) =>
      KnownAgentSystem sys
 
 instance AgentsManager (KnownAgentSystem args) where
@@ -188,8 +190,8 @@ instance AgentSystem (KnownAgentSystem args) where
 instance SystemArgsProvider (KnownAgentSystem args) args where
   agentSysArgs   (KnownAgentSystem sys) = agentSysArgs sys
 
-instance SystemAgentsCreation (KnownAgentSystem args) args where
-  newAgentOfRole (KnownAgentSystem sys) = newAgentOfRole sys
+-- instance SystemAgentsCreation (KnownAgentSystem args) where
+--   newAgentOfRole (KnownAgentSystem sys) = newAgentOfRole sys
 
 -----------------------------------------------------------------------------
 -----------------------------------------------------------------------------
@@ -281,7 +283,7 @@ instance AgentSystem (SimpleAgentSystem sArgs) where
 instance SystemArgsProvider (SimpleAgentSystem sArgs) sArgs where
   agentSysArgs = _agentSysArgs
 
-instance SystemAgentsCreation (SimpleAgentSystem sArgs) sArgs where
+instance SystemAgentsCreation (SimpleAgentSystem sArgs) where
 
   newAgentOfRole s d argsIO = do
     ref <- createAgentRef $ CreateAgentOfRole d (agentSysArgs s) argsIO
