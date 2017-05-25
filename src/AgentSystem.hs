@@ -19,10 +19,8 @@
 module AgentSystem(
 
   AgentSystem(..), AgentSystemArgsProvider(..)
-, AgentRole', AgentsOfRoles
+, AgentRole', AgentsOfRole(..), AgentsOfRoles
 , AgentResultsOfRoles, AgentMaybeResultsOfRoles
-
-, SimpleAgentSystem, newSimpleAgentSystem
 
 , module Export
 
@@ -31,20 +29,12 @@ module AgentSystem(
 import AgentSystem.Manager as Export
 import AgentSystem.Role    as Export
 
-import Data.Maybe (fromMaybe)
-import Data.Typeable (Typeable, cast)
-import qualified Data.List as List
+import Data.Typeable (Typeable)
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Data.Set (Set)
-import qualified Data.Set as Set
-
-
-import Control.Monad ( (<=<), forM )
-
-import Control.Concurrent.STM
+import Control.Monad ( (<=<) )
 
 -----------------------------------------------------------------------------
 
@@ -141,96 +131,5 @@ instance Show AgentMaybeResultsOfRole where
 
 instance Show AgentResultsOfRole where
   show (AgentResultsOfRole r l) = printResults r l
-
------------------------------------------------------------------------------
------------------------------------------------------------------------------
-
-newtype SimpleAgentSystem = SimpleAgentSystem{
-  _agentsRegisters :: TVar [RoleRegister]
-  }
-
-newSimpleAgentSystem = SimpleAgentSystem <$> newTVarIO []
-
------------------------------------------------------------------------------
-
-data RoleRegister = forall r . AgentRole' r =>
-    RoleRegister r (TVar (AgentsRoleMap r))
-
-type AgentsRoleMap r = Map AgentId (AgentRef (RoleResult r))
-
------------------------------------------------------------------------------
-
-lookupRoleRegister :: (AgentRole r, Typeable (RoleResult r)) =>
-                       r -> [RoleRegister] -> Maybe (TVar (AgentsRoleMap r))
-lookupRoleRegister r = cast <=<
-                       List.find (\(RoleRegister r' _) -> r' `roleEq` r)
-
-
-searchAgentsOfRoles :: (AgentRole r, Typeable (RoleResult r)) =>
-                      [RoleRegister] -> [r] -> IO (AgentsRoleMap r)
-searchAgentsOfRoles rrs rs = fmap Map.unions . sequence
-  $ do r <- rs
-       case lookupRoleRegister r rrs
-         of Just var -> return $ fromMaybe Map.empty . cast <$> readTVarIO var
-            _        -> []
-
-searchAgentsOfRole' sys r = do regs <- readTVarIO $ _agentsRegisters sys
-                               searchAgentsOfRoles regs [r]
-
-searchAgentsOfRoles' sys rs = do regs <- readTVarIO $ _agentsRegisters sys
-                                 searchAgentsOfRoles regs rs
-
-
------------------------------------------------------------------------------
------------------------------------------------------------------------------
-
-instance AgentsManager SimpleAgentSystem where
-  listAgents sys = do regs <- readTVarIO $ _agentsRegisters sys
-                      maps <- forM regs $
-                        \(RoleRegister _ var) ->
-                          Map.map someAgentRef <$> readTVarIO var
-                      return $ concatMap Map.elems maps
-  findAgent sys aId = findAgent' aId =<< readTVarIO (_agentsRegisters sys)
-
-
-findAgent' _ []                          = return Nothing
-findAgent' k (RoleRegister _ var : regs) =
-  do agMap <- readTVarIO var
-     maybe (findAgent' k regs)
-           (return . Just)
-           (someAgentRef <$> Map.lookup k agMap)
-
------------------------------------------------------------------------------
-
-instance AgentSystem SimpleAgentSystem where
-  listAgentsByRole = atomically
-                   . (mkAgentsOfRole [] <=< readTVar . _agentsRegisters)
-      where
-        mkAgentsOfRole acc [] = return . Map.fromList $ reverse acc
-        mkAgentsOfRole acc (RoleRegister r var : regs) =
-          do rMap <- readTVar var
-             let new = AgentsOfRole r $ Map.elems rMap
-             mkAgentsOfRole ((SomeRole r, new):acc) regs
-
-  listAgentsOfRoles s rs = undefined
-    -- maybe [] Map.elems <$> lookupAgentsOfRole' s r
-
-  findAgentOfRole sys r aId = do
-    reg <- searchAgentsOfRole' sys r
-    return $ Map.lookup aId reg
-
-  newAgentOfRole s d argsIO = do
-    ref <- createAgentRef $ CreateAgentOfRole d (agentSysArgs s) argsIO
-    (AgentRoleDescriptor r _) <- return d
-    let newRegister =
-          do newMap <- newTVar $ Map.singleton (agentId ref) ref
-             _agentsRegisters s `modifyTVar` (RoleRegister r newMap :)
-
-    atomically $ do regs <- readTVar $ _agentsRegisters s
-                    maybe newRegister
-                          (`modifyTVar` Map.insert (agentId ref) ref)
-                          (lookupRoleRegister r regs)
-    return ref
-
 
 -----------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 module Agent.PingPong.System.SendResult where
 
 import AgentSystem.Generic
+import AgentSystem.Simple
 import Agent.PingPong
 import Agent.PingPong.Role.SendResult hiding (runPingPong)
 

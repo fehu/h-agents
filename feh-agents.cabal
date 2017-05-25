@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                feh-agents
-version:             0.0.4.0
+version:             0.0.4.1
 synopsis:            -
 -- description:
 homepage:            -
@@ -24,10 +24,14 @@ library
                        AgentSystem.Role
                        AgentSystem.Manager
                        AgentSystem.Generic
+                       AgentSystem.Simple
+                       AgentSystem.Simple.Implementation
+                       AgentSystem.Simple.Template
 
   build-depends:       base >=4.9 && <4.10,
                        stm ==2.4.*,
-                       containers ==0.5.*
+                       containers ==0.5.*,
+                       template-haskell ==2.11.*
 
   other-modules:       Agent.Message
                        Agent.Interface
